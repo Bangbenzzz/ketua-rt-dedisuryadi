@@ -1,9 +1,11 @@
+// src/app/login/page.tsx
 'use client';
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import { signInWithEmailAndPassword } from 'firebase/auth';
+import { FirebaseError } from 'firebase/app';
 import { auth } from '@/lib/firebase';
 import styles from './login.module.css';
 
@@ -12,23 +14,55 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const year = new Date().getFullYear();
 
   const onSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    if (loading) return;
+
     setErrorMsg(null);
     setLoading(true);
 
-    const formData = new FormData(e.currentTarget);
-    const email = String(formData.get('email') || '').trim();
-    const password = String(formData.get('password') || '');
-
     try {
-      await signInWithEmailAndPassword(auth, email, password);
-      router.push('/dashboard');
+      await signInWithEmailAndPassword(auth, email.trim(), password);
+      router.replace('/dashboard');
     } catch (err) {
-      console.error(err);
-      setErrorMsg('Email atau kata sandi salah.');
+      const fb = err as FirebaseError;
+      console.error('Login error:', fb.code, fb.message);
+
+      let base = 'Terjadi kesalahan. Coba lagi.';
+      switch (fb.code) {
+        case 'auth/invalid-credential':
+        case 'auth/wrong-password':
+        case 'auth/user-not-found':
+          base = 'Email atau kata sandi salah.';
+          break;
+        case 'auth/invalid-email':
+          base = 'Format email tidak valid.';
+          break;
+        case 'auth/user-disabled':
+          base = 'Akun dinonaktifkan. Hubungi admin.';
+          break;
+        case 'auth/too-many-requests':
+          base = 'Terlalu banyak percobaan. Coba lagi nanti.';
+          break;
+        case 'auth/network-request-failed':
+          base = 'Gagal terhubung ke jaringan. Periksa koneksi internet Anda.';
+          break;
+        case 'auth/operation-not-allowed':
+          base = 'Metode Email/Password belum diaktifkan di Firebase Console.';
+          break;
+        case 'auth/invalid-api-key':
+        case 'auth/configuration-not-found':
+          base = 'Konfigurasi Firebase tidak valid. Cek .env dan Project Settings.';
+          break;
+      }
+
+      // Saat dev, tampilkan kode error untuk diagnosa cepat
+      const showCode = process.env.NODE_ENV !== 'production' && fb.code ? ` [${fb.code}]` : '';
+      setErrorMsg(base + showCode);
     } finally {
       setLoading(false);
     }
@@ -54,10 +88,20 @@ export default function LoginPage() {
           <p className={styles.sub}>Website Resmi Kp. Cikadu RT. 06</p>
         </div>
 
-        <form onSubmit={onSubmit} className={styles.form} autoComplete="off">
+        <form onSubmit={onSubmit} className={styles.form} autoComplete="off" noValidate>
           <div className={styles.field}>
             <label htmlFor="email">Email</label>
-            <input id="email" name="email" type="email" placeholder="Masukan Email" required />
+            <input
+              id="email"
+              name="email"
+              type="email"
+              placeholder="Masukan Email"
+              required
+              autoComplete="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              disabled={loading}
+            />
           </div>
 
           <div className={styles.field}>
@@ -69,6 +113,10 @@ export default function LoginPage() {
                 type={showPassword ? 'text' : 'password'}
                 placeholder="Masukan Password"
                 required
+                autoComplete="current-password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                disabled={loading}
               />
               <button
                 type="button"
@@ -93,9 +141,13 @@ export default function LoginPage() {
             </div>
           </div>
 
-          {errorMsg && <p className={styles.err}>{errorMsg}</p>}
+          {errorMsg && <p className={styles.err} role="alert">{errorMsg}</p>}
 
-          <button className={`${styles.btn} ${styles.primary}`} type="submit" disabled={loading}>
+          <button
+            className={`${styles.btn} ${styles.primary}`}
+            type="submit"
+            disabled={loading || !email || !password}
+          >
             {loading ? 'Memproses…' : 'Masuk'}
           </button>
         </form>
