@@ -230,9 +230,11 @@ export default function WargaPage() {
       <header className="head">
         <div className="title">
           <h1>Data Warga</h1>
-          <p className="sub">Firestore realtime • Pencarian, paginasi, CRUD, Tabel/Kartu KK, kategori umur.</p>
+          <p className="sub">Tabel/Kartu KK, kategori umur.</p>
         </div>
-        <div className="actions">
+
+        <div className="headActions">
+          <a className="btn dashboard" href="/dashboard" title="Kembali ke Dashboard">← Dashboard</a>
           <button className="btn primary" onClick={onAdd}>+ Tambah Warga</button>
         </div>
       </header>
@@ -244,7 +246,7 @@ export default function WargaPage() {
             <button className={`tab ${view === 'kk' ? 'active' : ''}`} onClick={() => { setPage(1); setView('kk'); }}>Kartu KK</button>
           </div>
 
-          <div className="search">
+        <div className="search">
             <input placeholder="Cari nama / NIK / No KK..." value={query} onChange={(e) => { setPage(1); setQuery(e.target.value); }} />
             <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden><path d="M21 21l-4.35-4.35M10 17a7 7 0 1 1 0-14 7 7 0 0 1 0 14z" stroke="currentColor" strokeWidth="1.6" fill="none"/></svg>
           </div>
@@ -318,7 +320,7 @@ export default function WargaPage() {
                   const kat = getKategoriUmur(umur);
                   return (
                     <tr key={w.id}>
-                      <td><button className="link" onClick={() => onDetail(w)} title="Lihat detail">{w.nama}</button></td>
+                      <td><button className="link" onClick={() => setShowDetail(w)} title="Lihat detail">{w.nama}</button></td>
                       <td><code>{w.nik}</code></td>
                       <td><code>{w.noKk}</code></td>
                       <td>{umur} th • <Badge tone="violet">{kat}</Badge></td>
@@ -326,7 +328,7 @@ export default function WargaPage() {
                       <td><Badge tone={w.status === 'Menikah' ? 'green' : w.status === 'Cerai' ? 'amber' : 'blue'}>{w.status}</Badge></td>
                       <td className="actionsCol">
                         <div className="rowActions">
-                          <button className="btn sm" onClick={() => onDetail(w)} title="Detail"><EyeIcon /></button>
+                          <button className="btn sm" onClick={() => setShowDetail(w)} title="Detail"><EyeIcon /></button>
                           <button className="btn sm" onClick={() => onEdit(w)} title="Edit"><EditIcon /></button>
                           <button className="btn sm danger" onClick={() => onDelete(w)} title="Hapus"><TrashIcon /></button>
                         </div>
@@ -356,7 +358,7 @@ export default function WargaPage() {
                   <div className="row"><span className="lbl">Anak</span><span className="val">{g.anak.length ? g.anak.map(a => a.nama).join(', ') : '-'}</span></div>
                   <div className="members">
                     {g.anggota.map((m) => (
-                      <button key={m.id} className="chip" onClick={() => onDetail(m)} title="Detail anggota">
+                      <button key={m.id} className="chip" onClick={() => setShowDetail(m)} title="Detail anggota">
                         {m.nama} • {m.peran}
                       </button>
                     ))}
@@ -399,15 +401,20 @@ export default function WargaPage() {
         .wrap { padding: 18px; display: grid; gap: 16px; }
         @media (max-width: 640px) { .wrap { padding: 12px; } }
 
-        .head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+        /* Header: teks di atas, tombol bawah kiri–kanan */
+        .head { display: grid; gap: 10px; }
+        .title { text-align: center; }
         .title h1 { margin: 0; font-size: clamp(1.1rem, 2.2vw, 1.4rem); }
         .sub { margin: 4px 0 0; color: #9ca3af; font-size: .9rem; }
 
-        .actions .btn.primary {
-          background: #22c55e; color: white; border: none; padding: 10px 12px; border-radius: 10px; font-weight: 600;
-          min-height: 40px;
+        .headActions { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+        .headActions .btn {
+          background: rgba(255,255,255,.04); color: #e5e7eb; border: 1px solid rgba(255,255,255,.12);
+          padding: 10px 12px; border-radius: 10px; min-height: 40px; text-decoration: none;
         }
-        .btn.primary:hover { filter: brightness(1.05); }
+        .headActions .btn.dashboard { background: #3b82f6; color: #fff; border: none; font-weight: 700; }
+        .headActions .btn.primary { background: #22c55e; color: #fff; border: none; font-weight: 700; }
+        .btn.dashboard:hover, .btn.primary:hover { filter: brightness(1.05); }
 
         .toolbar {
           display: flex; align-items: center; justify-content: space-between; gap: 12px;
@@ -427,6 +434,13 @@ export default function WargaPage() {
         .filter label, .right label { color: #9ca3af; font-size: .85rem; margin-right: 6px; }
         select { background: rgba(255,255,255,.04); color: #e5e7eb; border: 1px solid rgba(255,255,255,.12); padding: 6px 10px; border-radius: 8px; }
 
+        @media (max-width: 640px) { .left, .right { width: 100%; } }
+        @media (max-width: 480px) {
+          .toolbar { gap: 8px; }
+          .search { flex: 1; }
+          .search input { width: 100%; }
+        }
+
         .summary { display: grid; grid-template-columns: repeat(3, 1fr) auto; gap: 10px; align-items: center; }
         @media (max-width: 800px) { .summary { grid-template-columns: 1fr 1fr; } .summary .tot { grid-column: 1 / -1; text-align: left; margin-top: 4px; } }
 
@@ -438,17 +452,54 @@ export default function WargaPage() {
 
         .card { border: 1px solid rgba(255,255,255,.12); border-radius: 14px; background: rgba(255,255,255,.03); padding: 10px; }
 
-        .tableWrap { overflow: auto; -webkit-overflow-scrolling: touch; }
+        .tableWrap { overflow: auto; -webkit-overflow-scrolling: touch; scrollbar-gutter: stable both-edges; }
         table.tbl { width: 100%; min-width: 980px; border-collapse: collapse; }
+        @media (max-width: 1024px) { table.tbl { min-width: 900px; } }
+        @media (max-width: 900px)  { table.tbl { min-width: 760px; } }
+        @media (max-width: 700px)  { table.tbl { min-width: 0; } }
+
+        .tbl thead th { position: sticky; top: 0; z-index: 2; background: rgba(20,22,28,.92); backdrop-filter: blur(6px); }
         .tbl th, .tbl td { padding: 10px; border-bottom: 1px solid rgba(255,255,255,.08); text-align: left; vertical-align: middle; }
         .tbl th { color: #a7f3d0; font-weight: 600; }
         .tbl td code { background: rgba(255,255,255,.04); padding: 2px 6px; border-radius: 6px; color: #e5e7eb; }
-
         .tbl th:nth-child(1), .tbl td:nth-child(1) { white-space: normal; }
-        .tbl th:nth-child(2), .tbl td:nth-child(2),
-        .tbl th:nth-child(3), .tbl td:nth-child(3) { white-space: nowrap; width: 180px; }
+        .tbl th:nth-child(2), .tbl td:nth-child(2), .tbl th:nth-child(3), .tbl td:nth-child(3) { white-space: nowrap; width: 180px; }
         .tbl th:nth-child(4), .tbl td:nth-child(4) { white-space: nowrap; }
         .tbl th.actionsCol, .tbl td.actionsCol { text-align: right; width: 160px; min-width: 160px; white-space: nowrap; }
+        @media (max-width: 900px) {
+          .tbl th:nth-child(2), .tbl td:nth-child(2),
+          .tbl th:nth-child(3), .tbl td:nth-child(3) { width: 150px; }
+        }
+
+        @media (max-width: 700px) {
+          .tbl thead {
+            position: absolute; width: 1px; height: 1px; margin: -1px; border: 0; padding: 0;
+            clip: rect(0 0 0 0); overflow: hidden;
+          }
+          .tbl tbody { display: grid; gap: 10px; }
+          .tbl tr {
+            display: grid;
+            border: 1px solid rgba(255,255,255,.12);
+            border-radius: 12px;
+            background: rgba(255,255,255,.02);
+            overflow: hidden;
+          }
+          .tbl td {
+            display: grid; grid-template-columns: 120px 1fr; gap: 8px;
+            border: 0; border-bottom: 1px solid rgba(255,255,255,.08); padding: 10px; white-space: normal;
+          }
+          .tbl td:last-child { border-bottom: 0; }
+          .tbl td:nth-child(1)::before { content: 'Nama'; color: #9ca3af; }
+          .tbl td:nth-child(2)::before { content: 'NIK'; color: #9ca3af; }
+          .tbl td:nth-child(3)::before { content: 'No KK'; color: #9ca3af; }
+          .tbl td:nth-child(4)::before { content: 'Umur/Kategori'; color: #9ca3af; }
+          .tbl td:nth-child(5)::before { content: 'Peran'; color: #9ca3af; }
+          .tbl td:nth-child(6)::before { content: 'Status'; color: #9ca3af; }
+          .tbl td:nth-child(7)::before { content: 'Aksi'; color: #9ca3af; }
+          .tbl td.actionsCol { grid-template-columns: 1fr; }
+          .tbl td.actionsCol::before { display: none; }
+          .rowActions { justify-content: flex-start; flex-wrap: wrap; }
+        }
 
         .rowActions { display: inline-flex; gap: 6px; flex-wrap: nowrap; }
         .btn.sm {
@@ -461,11 +512,13 @@ export default function WargaPage() {
         .btn.sm.danger { border-color: rgba(239,68,68,.35); color: #fecaca; }
         .btn.sm.danger:hover { background: rgba(239,68,68,.15); }
         .btn.sm svg { pointer-events: none; }
+        @media (pointer: coarse) { .btn.sm { width: 40px; height: 40px; } }
 
         .empty { color: #9ca3af; text-align: center; padding: 20px 6px; }
 
         .kkGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; }
         @media (max-width: 420px) { .kkGrid { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); } }
+        @media (max-width: 360px) { .kkGrid { grid-template-columns: 1fr; } }
         .kkCard { border: 1px solid rgba(255,255,255,.1); border-radius: 12px; overflow: hidden; background: rgba(255,255,255,.02); }
         .kkHead { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px; background: rgba(34,197,94,.08); }
         .kkNo { color: #cbd5e1; font-weight: 600; }
@@ -474,6 +527,7 @@ export default function WargaPage() {
         .kkBody { padding: 10px; display: grid; gap: 8px; }
         .row { display: grid; grid-template-columns: 140px 1fr; gap: 10px; }
         @media (max-width: 480px) { .row { grid-template-columns: 120px 1fr; } }
+        @media (max-width: 360px) { .row { grid-template-columns: 100px 1fr; } }
         .lbl { color: #9ca3af; }
         .val { color: #e5e7eb; }
         .members { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
@@ -528,6 +582,10 @@ function Pagination({ page, totalPages, total, onPage }: { page: number; totalPa
         .ctrl { display: inline-flex; gap: 6px; }
         .ctrl button { background: rgba(255,255,255,.04); color: #e5e7eb; border: 1px solid rgba(255,255,255,.12); padding: 6px 10px; border-radius: 8px; min-height: 36px; }
         .ctrl button:disabled { opacity: .4; cursor: not-allowed; }
+        @media (max-width: 560px) {
+          .pg { justify-content: center; }
+          .info { width: 100%; text-align: center; }
+        }
       `}</style>
     </div>
   );
@@ -596,6 +654,9 @@ function WargaFormModal({
         .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 6px; flex-wrap: wrap; }
         .btn { background: rgba(255,255,255,.04); color: #e5e7eb; border: 1px solid rgba(255,255,255,.12); padding: 10px 12px; border-radius: 10px; min-height: 40px; }
         .btn.primary { background: #22c55e; border-color: transparent; color: #fff; font-weight: 700; }
+        @media (max-width: 360px) {
+          input, select { font-size: 16px; } /* hindari zoom iOS saat fokus */
+        }
       `}</style>
     </Modal>
   );
@@ -675,6 +736,7 @@ function DetailModal({ warga, all, onClose, onEdit }: { warga: Warga; all: Warga
         .id, .kk { border: 1px solid rgba(255,255,255,.12); border-radius: 12px; padding: 10px; background: rgba(255,255,255,.03); }
         .row { display: grid; grid-template-columns: 140px 1fr; gap: 10px; padding: 6px 0; }
         @media (max-width: 480px) { .row { grid-template-columns: 120px 1fr; } }
+        @media (max-width: 360px) { .row { grid-template-columns: 100px 1fr; } }
         .row span { color: #9ca3af; }
         h4 { margin: 0 0 6px; color: #a7f3d0; }
 
@@ -753,6 +815,15 @@ function Modal({ title, children, onClose }: { title: string; children: React.Re
         .x { width: 30px; height: 30px; border-radius: 8px; display: grid; place-items: center;
           border: 1px solid rgba(255,255,255,.12); background: rgba(255,255,255,.04); color: #cbd5e1; }
         .body { padding-top: 8px; }
+
+        @media (max-width: 480px) {
+          .modal {
+            inset: 0; margin: 0; width: 100vw; height: 100dvh; max-height: none; border-radius: 0;
+            padding: 12px calc(12px + env(safe-area-inset-right)) calc(12px + env(safe-area-inset-bottom)) calc(12px + env(safe-area-inset-left));
+          }
+          .x { width: 36px; height: 36px; }
+          .body { padding-bottom: 8px; }
+        }
       `}</style>
     </>
   );
@@ -761,12 +832,16 @@ function Modal({ title, children, onClose }: { title: string; children: React.Re
 function Spinner({ label = 'Memuat...' }: { label?: string }) {
   return (
     <div className="spinnerWrap" role="status" aria-live="polite">
-      <div className="spinner" /><div className="spinnerLabel">{label}</div>
+      <div className="spinner" />
+      <div className="spinnerLabel">{label}</div>
       <style jsx>{`
         .spinnerWrap { display: grid; justify-items: center; gap: 10px; color: #cbd5e1; }
         .spinner { width: 36px; height: 36px; border-radius: 50%; border: 3px solid rgba(255,255,255,.15); border-top-color: #22c55e; animation: spin 0.9s linear infinite; }
         .spinnerLabel { font-size: .95rem; color: #9ca3af; }
         @keyframes spin { to { transform: rotate(360deg); } }
+        @media (prefers-reduced-motion: reduce) {
+          .spinner { animation: none; }
+        }
       `}</style>
     </div>
   );

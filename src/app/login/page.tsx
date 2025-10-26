@@ -85,7 +85,7 @@ export default function LoginPage() {
             />
           </div>
           <h1 className={styles.title}>Selamat Datang!</h1>
-          <p className={styles.sub}>Website Resmi Kp. Cikadu RT. 06</p>
+          <p className={styles.sub}>Website Resmi Kp. Cikadu RT. 02</p>
         </div>
 
         <form onSubmit={onSubmit} className={styles.form} autoComplete="off" noValidate>
@@ -152,7 +152,7 @@ export default function LoginPage() {
           </button>
         </form>
 
-        <p className={styles.footer}>© {year} Kp. Cikadu RT. 06 All Rights Reserved</p>
+        <p className={styles.footer}>© {year} Kp. Cikadu RT. 02 All Rights Reserved</p>
       </section>
     </main>
   );

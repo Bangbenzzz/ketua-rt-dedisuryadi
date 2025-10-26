@@ -159,7 +159,7 @@ export default function DashboardPage() {
       const pageWidth = (pageSize?.getWidth?.() as number) ?? (pageSize?.width as number) ?? 595;
       const pageHeight = (pageSize?.getHeight?.() as number) ?? (pageSize?.height as number) ?? 842;
 
-      const title = 'Riwayat Transaksi Keuangan Kp. Cikadu RT. 06';
+      const title = 'Riwayat Transaksi Keuangan Kp. Cikadu RT. 02';
       const tglExp = `Tanggal ekspor: ${formatWIBTimestamp()} WIB`;
 
       doc.setDrawColor(16, 163, 74);
@@ -211,7 +211,7 @@ export default function DashboardPage() {
       doc.setFont('helvetica', 'bold'); doc.setFontSize(13); doc.setTextColor(valColor[0], valColor[1], valColor[2]);
       doc.text(sisaStr, margin + boxW - 12, boxY + 22, { align: 'right' });
 
-      doc.save(`riwayat-transaksi_Kp-Cikadu-RT06_${fileTimestampWIB()}_WIB.pdf`);
+      doc.save(`riwayat-transaksi_Kp-Cikadu-RT02_${fileTimestampWIB()}_WIB.pdf`);
     } catch (e) {
       console.error(e);
       alert('Gagal mengekspor PDF. Coba lagi.');
@@ -254,7 +254,7 @@ export default function DashboardPage() {
       ];
 
       XLSX.utils.book_append_sheet(wb, ws, 'Riwayat');
-      XLSX.writeFile(wb, `riwayat-transaksi_Kp-Cikadu-RT06_${fileTimestampWIB()}_WIB.xlsx`);
+      XLSX.writeFile(wb, `riwayat-transaksi_Kp-Cikadu-RT02_${fileTimestampWIB()}_WIB.xlsx`);
     } catch (e) {
       console.error(e);
       alert('Gagal mengekspor Excel. Coba lagi.');

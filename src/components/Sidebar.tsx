@@ -81,7 +81,7 @@ export default function Sidebar({
         <div className="sbHeader">
           <div className="brand">
             <span className="logo" aria-hidden>RT</span>
-            <span className="brandText">Admin RT. 06</span>
+            <span className="brandText">Admin RT. 02</span>
           </div>
           <button className="sbClose" aria-label="Tutup menu" onClick={onClose}>
             <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden>
@@ -106,7 +106,7 @@ export default function Sidebar({
         </div>
 
         <div className="sbFooter">
-          <span className="mini">© {new Date().getFullYear()} Kp. Cikadu RT. 06 - Ketua RT - Dedi Suryadi</span>
+          <span className="mini">© {new Date().getFullYear()} Kp. Cikadu RT. 02 - Ketua RT - Dedi Suryadi</span>
         </div>
       </aside>
 
