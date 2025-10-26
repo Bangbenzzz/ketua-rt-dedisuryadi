@@ -15,7 +15,8 @@ export default function Sidebar({
 
   const isActive = useCallback(
     (href: string) => {
-      if (href === '/dashboard') return pathname === '/' || pathname.startsWith('/dashboard');
+      // Dashboard aktif hanya di / atau /dashboard (tidak aktif di /dashboard/warga)
+      if (href === '/dashboard') return pathname === '/' || pathname === '/dashboard';
       return pathname.startsWith(href);
     },
     [pathname]
@@ -32,7 +33,7 @@ export default function Sidebar({
       ),
     },
     {
-      href: '/warga',
+      href: '/dashboard/warga', // <-- arahkan ke halaman Data Warga
       label: 'Data Warga',
       icon: (
         <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden fill="none">
@@ -80,7 +81,7 @@ export default function Sidebar({
         <div className="sbHeader">
           <div className="brand">
             <span className="logo" aria-hidden>RT</span>
-            <span className="brandText">Admin RT</span>
+            <span className="brandText">Admin RT. 06</span>
           </div>
           <button className="sbClose" aria-label="Tutup menu" onClick={onClose}>
             <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden>
