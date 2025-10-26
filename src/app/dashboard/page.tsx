@@ -72,6 +72,33 @@ function fileTimestampWIB() {
   return `${jkt.getFullYear()}${p(jkt.getMonth()+1)}${p(jkt.getDate())}_${p(jkt.getHours())}${p(jkt.getMinutes())}${p(jkt.getSeconds())}`;
 }
 
+// Zona WIB helpers
+function getNowJKT() {
+  return new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Jakarta' }));
+}
+function monthKeyJKT(d: Date) {
+  return d.toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta', year: 'numeric', month: '2-digit' }); // YYYY-MM
+}
+function longDateIDJKT(d: Date) {
+  return d.toLocaleDateString('id-ID', {
+    timeZone: 'Asia/Jakarta',
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  });
+}
+// Label chip: tanggal-bulan(tiga huruf)-tahun
+function dateDMYChip() {
+  const now = getNowJKT();
+  const day = now.toLocaleString('id-ID', { timeZone: 'Asia/Jakarta', day: 'numeric' });
+  const mon = now.toLocaleString('id-ID', { timeZone: 'Asia/Jakarta', month: 'short' }).replace('.', '');
+  const year = now.toLocaleString('id-ID', { timeZone: 'Asia/Jakarta', year: 'numeric' });
+  return `${day} ${mon} ${year}`;
+}
+
+type RangeKey = 7 | 14 | 30 | 'BULAN';
+
 export default function DashboardPage() {
   const router = useRouter();
   const [sbOpen, setSbOpen] = useState(false);
@@ -95,8 +122,11 @@ export default function DashboardPage() {
   // Export status
   const [exporting, setExporting] = useState<null | 'pdf' | 'excel'>(null);
 
-  // Rentang hari grafik
-  const [range, setRange] = useState<7 | 14 | 30>(14);
+  // Rentang hari grafik (+ Bulan)
+  const [range, setRange] = useState<RangeKey>(14);
+
+  // Label tanggal berjalan untuk topbar
+  const nowLongLabel = useMemo(() => longDateIDJKT(getNowJKT()), []);
 
   // Auth gate
   useEffect(() => {
@@ -137,6 +167,30 @@ export default function DashboardPage() {
     const keluar = data.filter((x) => x.jenis === 'Pengeluaran').reduce((a, b) => a + (b.nominal || 0), 0);
     return { pemasukan: masuk, pengeluaran: keluar, sisa: masuk - keluar };
   }, [data]);
+
+  // Ringkasan Bulan Ini
+  const { pemasukanBulan, pengeluaranBulan, sisaBulan } = useMemo(() => {
+    const nowKey = monthKeyJKT(getNowJKT());
+    let masuk = 0, keluar = 0;
+    for (const t of data) {
+      const d = new Date(t.tanggal);
+      if (monthKeyJKT(d) === nowKey) {
+        if (t.jenis === 'Pemasukan') masuk += t.nominal || 0;
+        else keluar += t.nominal || 0;
+      }
+    }
+    return { pemasukanBulan: masuk, pengeluaranBulan: keluar, sisaBulan: masuk - keluar };
+  }, [data]);
+
+  // Data untuk grafik: jika "BULAN", filter data ke bulan ini
+  const chartData = useMemo(() => {
+    if (range !== 'BULAN') return data;
+    const nowKey = monthKeyJKT(getNowJKT());
+    return data.filter((t) => monthKeyJKT(new Date(t.tanggal)) === nowKey);
+  }, [data, range]);
+
+  // Range numerik untuk komponen chart (DualLineTicker tetap 7|14|30)
+  const rangeForChart = (range === 'BULAN' ? 30 : range) as 7 | 14 | 30;
 
   const totalPages = Math.max(1, Math.ceil(data.length / ITEMS_PER_PAGE));
   const paged = useMemo(() => {
@@ -301,7 +355,10 @@ export default function DashboardPage() {
         <button className="btn btn--icon hamburger" aria-label="Buka menu" onClick={() => setSbOpen(true)}>
           <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden><path d="M4 6h16M4 12h16M4 18h16" stroke="currentColor" strokeWidth="1.8" /></svg>
         </button>
-        <div className="brand"><span className="dot" />Dedi Suryadi</div>
+        <div className="brand">
+          <span className="dot" aria-hidden />
+         Dedi Suryadi
+        </div>
         <button className="btn btn--delete" onClick={() => setShowLogoutConfirm(true)}>Keluar</button>
       </header>
 
@@ -311,22 +368,36 @@ export default function DashboardPage() {
           <div className="card"><div className="cardTitle">Pemasukan</div><div className="amount green" title={formatIDR(pemasukan)}>{formatIDRCompact(pemasukan)}</div></div>
           <div className="card"><div className="cardTitle">Pengeluaran</div><div className="amount red" title={formatIDR(pengeluaran)}>{formatIDRCompact(pengeluaran)}</div></div>
           <div className="card"><div className="cardTitle">Sisa Saldo</div><div className="amount" title={formatIDR(sisa)}>{sisa === 0 ? 'Rp 0' : formatIDRCompact(sisa)}</div></div>
+          <div className="card">
+            <div className="cardTitle">Bulan Ini</div>
+            <div
+              className="amount"
+              title={`Pemasukan: ${formatIDR(pemasukanBulan)} • Pengeluaran: ${formatIDR(pengeluaranBulan)}`}
+            >
+              {sisaBulan === 0 ? 'Rp 0' : formatIDRCompact(sisaBulan)}
+            </div>
+          </div>
         </div>
 
-        {/* Grafik dua garis (smooth, saling silang) */}
+        {/* Grafik dua garis */}
         <div className="card chartCard">
           <div className="chartHead">
             <div className="cardTitle">Grafik Pemasukan vs Pengeluaran</div>
             <div className="rangeChips" role="tablist" aria-label="Rentang data">
-              {[7, 14, 30].map((d) => (
+              {[
+                { key: 7 as RangeKey, label: '7H', title: '7 Hari terakhir' },
+                { key: 14 as RangeKey, label: '14H', title: '14 Hari terakhir' },
+                { key: 30 as RangeKey, label: '30H', title: '30 Hari terakhir' },
+              ].map(({ key, label, title }) => (
                 <button
-                  key={d}
+                  key={String(key)}
                   role="tab"
-                  aria-selected={range === d}
-                  className={`chip ${range === d ? 'active' : ''}`}
-                  onClick={() => setRange(d as 7 | 14 | 30)}
+                  aria-selected={range === key}
+                  className={`chip ${range === key ? 'active' : ''}`}
+                  onClick={() => setRange(key)}
+                  title={title}
                 >
-                  {d}H
+                  {label}
                 </button>
               ))}
             </div>
@@ -334,7 +405,7 @@ export default function DashboardPage() {
           {loadingData ? (
             <div className="center"><Spinner size={28} /></div>
           ) : (
-            <DualLineTicker data={data} range={range} height={240} loopMs={8000} />
+            <DualLineTicker data={chartData} range={rangeForChart} height={240} loopMs={8000} />
           )}
           <div className="legend">
             <div className="legendItem"><span className="legendDot legendIn" /> Pemasukan</div>
@@ -505,22 +576,75 @@ export default function DashboardPage() {
       )}
 
       <style jsx>{`
-        .page { --sbw: 248px; min-height: 100svh; color: #e5e7eb; padding: clamp(8px, 3vw, 24px); overflow-x: hidden;
+        .page {
+          --sbw: 248px;
+          min-height: 100svh;
+          color: #e5e7eb;
+          padding: clamp(8px, 3vw, 24px);
+          overflow-x: hidden;
+          /* Tambahan agar konten tidak tertutup header fixed */
+          padding-top: calc(clamp(8px, 3vw, 24px) + 64px);
           background:
             radial-gradient(1200px circle at 10% -10%, rgba(99,102,241,0.15), transparent 40%),
             radial-gradient(900px circle at 90% 110%, rgba(236,72,153,0.12), transparent 40%),
-            linear-gradient(180deg, #0b0f17, #0a0d14 60%, #080b11); }
-        @media (min-width: 900px) { .page { padding-left: calc(clamp(8px, 3vw, 24px) + var(--sbw)); } }
+            linear-gradient(180deg, #0b0f17, #0a0d14 60%, #080b11);
+        }
+        @media (min-width: 900px) {
+          .page { padding-left: calc(clamp(8px, 3vw, 24px) + var(--sbw)); }
+        }
 
-        .bgDecor { position: fixed; inset: -40% -10% -10% -10%; background-image: radial-gradient(rgba(255,255,255,0.05) 1px, transparent 1px); background-size: 18px 18px; pointer-events: none; }
+        .bgDecor {
+          position: fixed; inset: -40% -10% -10% -10%;
+          background-image: radial-gradient(rgba(255,255,255,0.05) 1px, transparent 1px);
+          background-size: 18px 18px; pointer-events: none;
+        }
 
-        .topbar { width: 100%; max-width: 1040px; margin: 0 auto clamp(8px, 2vw, 12px);
-          padding: clamp(6px, 1.8vw, 10px) clamp(8px, 2vw, 12px);
-          display: flex; align-items: center; justify-content: space-between; gap: clamp(6px, 2vw, 8px);
-          flex-wrap: wrap; border: 1px solid rgba(255,255,255,0.12); border-radius: 14px; background: rgba(20,22,28,0.6);
-          backdrop-filter: blur(10px); }
-        .brand { font-weight: 600; letter-spacing: .2px; display: inline-flex; align-items: center; gap: 8px; font-size: clamp(.9rem, 2.6vw, 1rem); }
-        .dot { width: 8px; height: 8px; border-radius: 999px; background: #22c55e; display: inline-block; }
+        /* Header tetap fixed (freeze di atas) */
+.topbar {
+  width: min(100% - clamp(16px, 6vw, 48px), 1040px);
+  position: fixed;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 40; /* tetap di atas konten, di bawah modal */
+
+  padding: clamp(6px, 1.8vw, 10px) clamp(8px, 2vw, 12px);
+  display: flex; align-items: center; justify-content: space-between; gap: clamp(6px, 2vw, 8px);
+  flex-wrap: wrap; border: 1px solid rgba(255,255,255,0.12); border-radius: 14px;
+  background: rgba(20,22,28,0.6);
+  backdrop-filter: blur(10px);
+}
+
+/* Tambahan: di layar lebar, geser header ke area konten (kanan dari sidebar),
+    jadi tidak ketiban sidebar yang fixed di kiri */
+@media (min-width: 900px) {
+  .topbar {
+    left: calc(var(--sbw) + clamp(8px, 3vw, 24px)); /* start setelah sidebar + padding halaman */
+    right: clamp(8px, 3vw, 24px);                 /* beri jarak kanan */
+    transform: none;                                /* tidak perlu center transform */
+    width: auto;                                    /* isi area konten */
+    max-width: none;                                /* biar fleksibel mengikuti area konten */
+  }
+}
+        }
+        .brand { font-weight: 600; letter-spacing: .2px; display: inline-flex; align-items: center; gap: 8px; font-size: clamp(.9rem, 2.6vw, 1rem); flex: 1; }
+        .dot { width: 8px; height: 8px; border-radius: 999px; display: inline-block; background: #22c55e;
+          margin-right: 8px; /* <-- INI YANG SAYA TAMBAHKAN UNTUK JARAK */
+          animation: dotCycle 2.4s steps(1, end) infinite; }
+        @keyframes dotCycle {
+          0% { background: #22c55e; }
+          20% { background: #ef4444; }
+          40% { background: #f59e0b; }
+          60% { background: #3b82f6; }
+          80% { background: #f59e0b; }
+          100% { background: #22c55e; }
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .dot { animation: none; }
+        }
+        .dateNow { margin-left: 10px; padding-left: 10px; border-left: 1px solid rgba(255,255,255,0.12);
+          color: #cbd5e1; font-weight: 500; font-size: clamp(.72rem, 2.2vw, .9rem); white-space: nowrap; }
+
         .hamburger { display: inline-flex; } @media (min-width: 900px) { .hamburger { display: none; } }
 
         .container { width: 100%; max-width: 1040px; margin: 0 auto; padding-inline: clamp(8px, 3vw, 20px); display: grid; gap: clamp(10px, 2.2vw, 16px); }
@@ -571,25 +695,73 @@ export default function DashboardPage() {
           .mActions { display: flex; gap: 8px; margin-top: 8px; justify-content: flex-end; }
         }
 
-        .pagination { display: flex; align-items: center; justify-content: space-between; margin-top: 12px; gap: 8px; }
-        .pages { color: #cbd5e1; font-size: clamp(.72rem, 2.4vw, .92rem); }
-        @media (max-width: 320px) { .pages { display: none; } }
-
+        .pagination {
+          display: flex; align-items: center; justify-content: space-between;
+          padding-top: 10px; margin-top: 10px; border-top: 1px solid rgba(255,255,255,0.08);
+        }
+        .pages { color: #94a3b8; font-size: clamp(.8rem, 2.4vw, .9rem); }
         .onlyNarrow { display: none; }
-        @media (max-width: 280px) { .onlyWide { display: none; } .onlyNarrow { display: inline; } }
+        @media (max-width: 360px) {
+          .onlyWide { display: none; }
+          .onlyNarrow { display: inline; }
+        }
 
-        .muted { color: #9ca3af; padding: 10px 0; }
-        .errorBox { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 12px; border-radius: 10px; margin: 8px 0 12px;
-          color: #fecaca; background: rgba(239,68,68,0.08); border: 1px solid rgba(239,68,68,0.25); }
+        .muted { text-align: center; color: #94a3b8; padding: 12px; }
+        .cardHeader { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+        .exportBtns { display: flex; gap: 6px; }
 
-        .modalBackdrop { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(0,0,0,0.45); backdrop-filter: blur(4px); z-index: 50; padding: 16px; }
-        .modal { width: 100%; max-width: 420px; border-radius: 16px; padding: clamp(12px, 2.5vw, 16px); border: 1px solid rgba(255,255,255,0.12);
-          background: rgba(20,22,28,0.7); box-shadow: 0 20px 60px rgba(0,0,0,0.55); backdrop-filter: blur(14px); }
-        .modalHeader { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
-        .warnIcon { width: 36px; height: 36px; border-radius: 10px; display: grid; place-items: center; color: #fecaca; background: rgba(239,68,68,0.12); border: 1px solid rgba(239,68,68,0.3); }
-        .modalTitle { margin: 0; font-size: clamp(1rem, 2.6vw, 1.05rem); color: #f3f4f6; }
-        .modalDesc { margin: 8px 0 12px; color: #cbd5e1; font-size: clamp(.86rem, 2.4vw, .95rem); }
-        .modalActions { display: flex; justify-content: flex-end; gap: 10px; }
+        .btn {
+          padding: 8px 12px; border-radius: 10px; font-size: 14px; font-weight: 500;
+          border: 1px solid rgba(255,255,255,0.12); background: rgba(255,255,255,0.05); color: #e5e7eb;
+          transition: background .15s;
+        }
+        .btn:not(:disabled):hover { background: rgba(255,255,255,0.1); }
+        .btn:disabled { opacity: .5; cursor: not-allowed; }
+
+        .btn--icon { padding: 8px; display: grid; place-items: center; }
+        .btn--add { background: #10b981; border: none; color: #fff; font-weight: 600; }
+        .btn--add:hover { background: #10a370; }
+        .btn--delete { background: #ef4444; border: none; color: #fff; font-weight: 600; }
+        .btn--delete:hover { background: #dc2626; }
+        .btn--ghost { background: transparent; border: none; color: #cbd5e1; }
+        .btn--ghost:hover { background: rgba(255,255,255,0.1); }
+        .btn--edit { border-color: rgba(59,130,246,0.5); background: rgba(59,130,246,0.12); color: #bfdbfe; }
+        .btn--edit:hover { background: rgba(59,130,246,0.2); }
+        
+        .btn--mini { padding: 6px 10px; font-size: 13px; border-radius: 8px; }
+        .btn--excel { border-color: rgba(34,197,94,0.5); background: rgba(34,197,94,0.12); color: #bbf7d0; display: inline-flex; align-items: center; gap: 6px; }
+        .btn--excel:hover { background: rgba(34,197,94,0.2); }
+        .btn--pdf { border-color: rgba(245,158,11,0.5); background: rgba(245,158,11,0.12); color: #fde68a; display: inline-flex; align-items: center; gap: 6px; }
+        .btn--pdf:hover { background: rgba(245,158,11,0.2); }
+
+        .errorBox {
+          padding: 12px; border-radius: 10px; background: rgba(239,68,68,0.1); color: #fecaca;
+          border: 1px solid rgba(239,68,68,0.3);
+          display: flex; align-items: center; justify-content: space-between; gap: 10px;
+        }
+
+        /* Modal */
+        .modalBackdrop {
+          position: fixed; inset: 0; z-index: 50;
+          background: rgba(0,0,0,0.6); backdrop-filter: blur(5px);
+          display: grid; place-items: center; padding: 16px;
+          animation: fadeIn .15s ease;
+        }
+        .modal {
+          width: 100%; max-width: 420px;
+          border: 1px solid rgba(255,255,255,0.12); border-radius: 16px;
+          background: #0d1017; box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+          padding: 20px;
+          animation: zoomIn .15s ease-out;
+        }
+        .modalHeader { display: flex; align-items: center; gap: 10px; }
+        .modalTitle { margin: 0; font-size: 1.1rem; }
+        .warnIcon { color: #f59e0b; }
+        .modalDesc { margin: 12px 0 0; color: #cbd5e1; font-size: .95rem; }
+        .modalActions { margin-top: 20px; display: flex; justify-content: flex-end; gap: 8px; }
+
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes zoomIn { from { opacity: 0; transform: scale(.95); } to { opacity: 1; transform: scale(1); } }
       `}</style>
     </main>
   );

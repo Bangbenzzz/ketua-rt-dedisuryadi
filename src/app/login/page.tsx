@@ -152,7 +152,7 @@ export default function LoginPage() {
           </button>
         </form>
 
-        <p className={styles.footer}>© {year} Kp. Cikadu RT. 02 All Rights Reserved</p>
+        <p className={styles.footer}>© {year} Kp. Cikadu RT. 02 All Rights Reserved. Inc</p>
       </section>
     </main>
   );
