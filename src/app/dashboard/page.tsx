@@ -316,7 +316,7 @@ export default function DashboardPage() {
         {/* Grafik dua garis (smooth, saling silang) */}
         <div className="card chartCard">
           <div className="chartHead">
-            <div className="cardTitle">Grafik Pemasukan vs Pengeluaran (bergerak)</div>
+            <div className="cardTitle">Grafik Pemasukan vs Pengeluaran</div>
             <div className="rangeChips" role="tablist" aria-label="Rentang data">
               {[7, 14, 30].map((d) => (
                 <button
