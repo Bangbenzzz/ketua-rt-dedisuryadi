@@ -7,7 +7,7 @@ export default function GrafikPage() {
       <section className="container">
         <div className="card">
           <h1 style={{ margin: 0, fontSize: '1.1rem' }}>Grafik</h1>
-          <p style={{ color: '#9ca3af' }}>Halaman grafik WEB ENGINEER NIKI (coming soon).</p>
+          <p style={{ color: '#9ca3af' }}>Halaman grafik WEB ENGINEER NIKI (coming - soon).</p>
         </div>
       </section>
 

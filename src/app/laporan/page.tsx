@@ -7,7 +7,7 @@ export default function LaporanPage() {
       <section className="container">
         <div className="card">
           <h1 style={{ margin: 0, fontSize: '1.1rem' }}>Laporan</h1>
-          <p style={{ color: '#9ca3af' }}>Halaman laporan- - WEB ENGINEER NIKI (coming soon).</p>
+          <p style={{ color: '#9ca3af' }}>Halaman laporan- - WEB ENGINEER NIKI (coming - soon).</p>
         </div>
       </section>
 

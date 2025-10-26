@@ -229,8 +229,8 @@ export default function WargaPage() {
     <div className="wrap">
       <header className="head">
         <div className="title">
-          <h1>Data Warga</h1>
-          <p className="sub">Tabel/Kartu KK, kategori umur.</p>
+          <h1>Daftar Warga</h1>
+          <p className="sub">Tabel Kartu Keluarga</p>
         </div>
 
         <div className="headActions">
