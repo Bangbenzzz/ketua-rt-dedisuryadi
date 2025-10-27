@@ -13,9 +13,9 @@ type KategoriUmur = 'Balita' | 'Anak-anak' | 'Remaja' | 'Dewasa' | 'Lansia';
 type Warga = {
   id: string;
   nama: string;
-  nik: string;        // 16 digit
-  noKk: string;       // 16 digit
-  tglLahir: string;   // YYYY-MM-DD
+  nik: string; // 16 digit
+  noKk: string; // 16 digit
+  tglLahir: string; // YYYY-MM-DD
   peran: Peran;
   status: Status;
 };
@@ -28,6 +28,9 @@ type KeluargaInput = {
 };
 
 type Notice = { type: 'success' | 'error' | 'info' | 'warning'; title?: string; message: string };
+
+// Password akses di-inject saat build dari NEXT_PUBLIC_WARGA_PASSWORD
+const ACCESS_PASSWORD = process.env.NEXT_PUBLIC_WARGA_PASSWORD || '';
 
 /* Utils umur */
 function parseYmd(s: string) {
@@ -52,8 +55,7 @@ function getKategoriUmur(age: number): KategoriUmur {
   if (age <= 59) return 'Dewasa';
   return 'Lansia';
 }
-function validateNik(nik: string) { return /^\d{16}$/.test(nik); }
-function validateNoKk(noKk: string) { return /^\d{16}$/.test(noKk); }
+function validateNik(nik: string) { return /^\d{16}/.test(nik); } function validateNoKk(noKk: string) { return /^\d{16}/.test(noKk); }
 function validateDate(s: string) { return /^\d{4}-\d{2}-\d{2}$/.test(s) && !!parseYmd(s); }
 
 function usePagination<T>(items: T[], pageSize: number) {
@@ -90,6 +92,23 @@ async function logTransaksi(action: 'create' | 'update' | 'delete', payload: any
 export default function WargaPageClient() {
   const [data, setData] = useState<Warga[]>([]);
   const [loaded, setLoaded] = useState(false);
+   // Guard akses dengan password
+  const [authed, setAuthed] = useState(false);
+  useEffect(() => {
+    // Jika sudah terverifikasi di session, langsung lolos. Jika tidak ada password di env, jangan blok.
+    try {
+      const ok = sessionStorage.getItem('warga_auth_ok') === '1';
+      setAuthed(ok || !ACCESS_PASSWORD);
+    } catch {
+      setAuthed(!ACCESS_PASSWORD);
+    }
+  }, []);
+
+  const handleAuthSuccess = () => {
+    setAuthed(true);
+    try { sessionStorage.setItem('warga_auth_ok', '1'); } catch {}
+  };
+
 
   const [view, setView] = useState<'tabel' | 'kk'>('tabel');
   const [query, setQuery] = useState('');
@@ -103,6 +122,11 @@ export default function WargaPageClient() {
   const [showDetail, setShowDetail] = useState<Warga | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<Warga | null>(null);
   const [notice, setNotice] = useState<Notice | null>(null);
+
+  // --- [START] PERUBAHAN YANG DITAMBAHKAN ---
+  const [showAddChoiceModal, setShowAddChoiceModal] = useState(false);
+  const [addMode, setAddMode] = useState<'family' | 'single'>('family');
+  // --- [END] PERUBAHAN YANG DITAMBAHKAN ---
 
   const showError = (message: string, title = 'Gagal') => setNotice({ type: 'error', title, message });
   const showSuccess = (message: string, title = 'Berhasil') => setNotice({ type: 'success', title, message });
@@ -180,7 +204,7 @@ export default function WargaPageClient() {
     usePagination<any>(view === 'tabel' ? filtered : groupedKK, pageSize);
 
   // Handlers
-  function onAdd() { setEditing(null); setShowForm(true); }
+  function onAdd() { setShowAddChoiceModal(true); }
   function onEdit(row: Warga) { setEditing(row); setShowForm(true); }
   function onDelete(row: Warga) { setConfirmDelete(row); }
   function onDetail(row: Warga) { setShowDetail(row); }
@@ -358,11 +382,9 @@ export default function WargaPageClient() {
     return (
       <div className="wrap">
         <div className="pageLoader">
-          <Spinner label="Memuat data (Firebase)..." />
+          <Spinner label="Memuat data" />
         </div>
-        <style jsx>{`
-          .pageLoader { min-height: 60vh; display: grid; place-items: center; }
-        `}</style>
+        <style jsx>{` .pageLoader { min-height: 60vh; display: grid; place-items: center; } `}</style>
       </div>
     );
   }
@@ -390,7 +412,7 @@ export default function WargaPageClient() {
 
           <div className="search">
             <input placeholder="Cari nama / NIK / No KK..." value={query} onChange={(e) => { setPage(1); setQuery(e.target.value); }} />
-            <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden><path d="M21 21l-4.35-4.35M10 17a7 7 0 1 1 0-14 7 7 0 0 1 0 14z" stroke="currentColor" strokeWidth="1.6" fill="none"/></svg>
+            <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden><path d="M21 21l-4.35-4.35M10 17a7 7 0 1 1 0-14 7 7 0 0 1 0 14z" stroke="currentColor" strokeWidth="1.6" fill="none" /></svg>
           </div>
 
           <div className="filter">
@@ -426,17 +448,17 @@ export default function WargaPageClient() {
 
       <section className="summary">
         <StatusBar label="Menikah" value={statusSummary.Menikah} total={filtered.length} color="#22c55e" />
-        <StatusBar label="Cerai"   value={statusSummary.Cerai}   total={filtered.length} color="#f59e0b" />
-        <StatusBar label="Lajang"  value={statusSummary.Lajang}  total={filtered.length} color="#3b82f6" />
+        <StatusBar label="Cerai" value={statusSummary.Cerai} total={filtered.length} color="#f59e0b" />
+        <StatusBar label="Lajang" value={statusSummary.Lajang} total={filtered.length} color="#3b82f6" />
         <div className="tot">Total: {filtered.length} warga</div>
       </section>
 
       <section className="summaryAge">
-        <StatusBar label="Balita"     value={kategoriSummary['Balita']}     total={filtered.length} color="#06b6d4" />
-        <StatusBar label="Anak-anak"  value={kategoriSummary['Anak-anak']}  total={filtered.length} color="#10b981" />
-        <StatusBar label="Remaja"     value={kategoriSummary['Remaja']}     total={filtered.length} color="#8b5cf6" />
-        <StatusBar label="Dewasa"     value={kategoriSummary['Dewasa']}     total={filtered.length} color="#f97316" />
-        <StatusBar label="Lansia"     value={kategoriSummary['Lansia']}     total={filtered.length} color="#ef4444" />
+        <StatusBar label="Balita" value={kategoriSummary['Balita']} total={filtered.length} color="#06b6d4" />
+        <StatusBar label="Anak-anak" value={kategoriSummary['Anak-anak']} total={filtered.length} color="#10b981" />
+        <StatusBar label="Remaja" value={kategoriSummary['Remaja']} total={filtered.length} color="#8b5cf6" />
+        <StatusBar label="Dewasa" value={kategoriSummary['Dewasa']} total={filtered.length} color="#f97316" />
+        <StatusBar label="Lansia" value={kategoriSummary['Lansia']} total={filtered.length} color="#ef4444" />
       </section>
 
       {view === 'tabel' ? (
@@ -521,12 +543,37 @@ export default function WargaPageClient() {
             onSubmit={(payload) => upsertWarga(payload, editing?.id)}
             onQuickAddChild={(child) => addAnakToKK(editing!.noKk, child)}
           />
-        ) : (
+        ) : addMode === 'single' ? (
+          <WargaFormModal
+            initial={undefined}
+            onClose={() => setShowForm(false)}
+            onSubmit={(payload) => upsertWarga(payload, undefined)}
+            onQuickAddChild={() => showInfo('Fitur ini hanya untuk mengedit Kepala Keluarga/Istri.')}
+          />
+        ) : ( // addMode === 'family'
           <KeluargaFormModal
             onClose={() => setShowForm(false)}
             onSubmit={(payload) => createKeluarga(payload)}
           />
         )
+      )}
+
+      {showAddChoiceModal && (
+        <AddChoiceModal
+          onClose={() => setShowAddChoiceModal(false)}
+          onSelectSingle={() => {
+            setAddMode('single');
+            setEditing(null);
+            setShowForm(true);
+            setShowAddChoiceModal(false);
+          }}
+          onSelectFamily={() => {
+            setAddMode('family');
+            setEditing(null);
+            setShowForm(true);
+            setShowAddChoiceModal(false);
+          }}
+        />
       )}
 
       {showDetail && (
@@ -697,7 +744,7 @@ export default function WargaPageClient() {
 /* Components */
 function Badge({ children, tone = 'slate' }: { children: React.ReactNode; tone?: 'green' | 'amber' | 'blue' | 'slate' | 'violet' }) {
   const map: Record<string, string> = {
-    green: 'rgba(34,197,94,.18)', amber: 'rgba(245,158,11,.22)', blue: 'rgba(59,130,246,.20)', slate: 'rgba(148,163,184,.22)', violet:'rgba(139,92,246,.22)',
+    green: 'rgba(34,197,94,.18)', amber: 'rgba(245,158,11,.22)', blue: 'rgba(59,130,246,.20)', slate: 'rgba(148,163,184,.22)', violet: 'rgba(139,92,246,.22)',
   };
   const bg = map[tone] ?? map.slate;
   return (<span style={{ background: bg, color: '#e5e7eb', padding: '4px 8px', borderRadius: 999, fontSize: '.85rem', border: '1px solid rgba(255,255,255,.12)' }}>{children}</span>);
@@ -714,12 +761,7 @@ function StatusBar({ label, value, total, color = '#3b82f6' }: { label: string; 
       <div className="barTrack">
         <div className="barFill" style={{ width: `${pct}%`, background: color }} />
       </div>
-      <style jsx>{`
-        .barWrap { display: grid; gap: 4px; }
-        .barLab { display: flex; justify-content: space-between; align-items: center; color: #e5e7eb; font-size: .85rem; }
-        .barTrack { width: 100%; height: 6px; background: rgba(255,255,255,.1); border-radius: 99px; overflow: hidden; }
-        .barFill { height: 100%; transition: width .3s; }
-      `}</style>
+      <style jsx>{` .barWrap { display: grid; gap: 4px; } .barLab { display: flex; justify-content: space-between; align-items: center; color: #e5e7eb; font-size: .85rem; } .barTrack { width: 100%; height: 6px; background: rgba(255,255,255,.1); border-radius: 99px; overflow: hidden; } .barFill { height: 100%; transition: width .3s; } `}</style>
     </div>
   );
 }
@@ -732,16 +774,7 @@ function Pagination({ page, totalPages, total, onPage }: { page: number; totalPa
         <button onClick={() => onPage(page - 1)} disabled={page <= 1}>«</button>
         <button onClick={() => onPage(page + 1)} disabled={page >= totalPages}>»</button>
       </div>
-      <style jsx>{`
-        .pag { display: flex; align-items: center; justify-content: space-between; padding: 10px 6px 0; }
-        .pagInfo { color: #9ca3af; font-size: .9rem; }
-        .pagBtns { display: flex; gap: 6px; }
-        .pagBtns button {
-          width: 32px; height: 32px; border: 1px solid rgba(255,255,255,.12); background: rgba(255,255,255,.03);
-          color: #e5e7eb; border-radius: 8px;
-        }
-        .pagBtns button:disabled { opacity: .4; cursor: not-allowed; }
-      `}</style>
+      <style jsx>{` .pag { display: flex; align-items: center; justify-content: space-between; padding: 10px 6px 0; } .pagInfo { color: #9ca3af; font-size: .9rem; } .pagBtns { display: flex; gap: 6px; } .pagBtns button { width: 32px; height: 32px; border: 1px solid rgba(255,255,255,.12); background: rgba(255,255,255,.03); color: #e5e7eb; border-radius: 8px; } .pagBtns button:disabled { opacity: .4; cursor: not-allowed; } `}</style>
     </div>
   );
 }
@@ -750,25 +783,23 @@ function Spinner({ label = 'Loading...' }: { label?: string }) {
   return (
     <div className="spinWrap">
       <svg width="24" height="24" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-        <g fill="none" strokeWidth="1.6"><circle cx="12" cy="12" r="9.5" strokeOpacity=".3"/><path d="M12 2.5a9.5 9.5 0 0 1 0 19z"/></g>
+        <g fill="none" strokeWidth="1.6"><circle cx="12" cy="12" r="9.5" strokeOpacity=".3" /><path d="M12 2.5a9.5 9.5 0 0 1 0 19z" /></g>
       </svg>
       {label && <span>{label}</span>}
-      <style jsx>{`
-        .spinWrap { display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; color: #9ca3af; }
-        svg { animation: spin 1s linear infinite; }
-        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-      `}</style>
+      <style jsx>{` .spinWrap { display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; color: #9ca3af; } svg { animation: spin 1s linear infinite; } @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } } `}</style>
     </div>
   );
 }
 
 /* Icons */
-const EyeIcon = () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>;
-const EditIcon = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>;
-const TrashIcon = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>;
+const UserIcon = () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>;
+const UsersIcon = () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>;
+const EyeIcon = () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg>;
+const EditIcon = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>;
+const TrashIcon = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /><line x1="10" y1="11" x2="10" y2="17" /><line x1="14" y1="11" x2="14" y2="17" /></svg>;
 
 /* ================================================================================================
-  MODAL COMPONENTS
+MODAL COMPONENTS
 ================================================================================================ */
 
 /* Base Modal */
@@ -793,48 +824,48 @@ function Modal({ children, onClose, title = 'Modal', width = 540 }: { children: 
         <div className="modalBody">{children}</div>
       </div>
       <style jsx>{`
-        .scrim {
-          position: fixed; inset: 0; z-index: 50;
-          background: rgba(0,0,0,.5); backdrop-filter: blur(4px);
-          display: grid; place-items: center;
-          padding: 16px;
-          animation: fadeIn .15s ease-out;
-        }
-        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    .scrim {
+      position: fixed; inset: 0; z-index: 50;
+      background: rgba(0,0,0,.5); backdrop-filter: blur(4px);
+      display: grid; place-items: center;
+      padding: 16px;
+      animation: fadeIn .15s ease-out;
+    }
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 
-        .modal {
-          width: 100%;
-          background: #1f2229; /* Slightly lighter than page bg */
-          color: #e5e7eb;
-          border-radius: 16px; border: 1px solid rgba(255,255,255,.12);
-          overflow: hidden;
-          box-shadow: 0 10px 25px rgba(0,0,0,.2);
-          animation: zoomIn .15s cubic-bezier(0.2, 0.8, 0.2, 1);
-        }
-        @keyframes zoomIn {
-          from { opacity: 0; transform: scale(.95) translateY(10px); }
-          to { opacity: 1; transform: scale(1) translateY(0); }
-        }
+    .modal {
+      width: 100%;
+      background: #1f2229; /* Slightly lighter than page bg */
+      color: #e5e7eb;
+      border-radius: 16px; border: 1px solid rgba(255,255,255,.12);
+      overflow: hidden;
+      box-shadow: 0 10px 25px rgba(0,0,0,.2);
+      animation: zoomIn .15s cubic-bezier(0.2, 0.8, 0.2, 1);
+    }
+    @keyframes zoomIn {
+      from { opacity: 0; transform: scale(.95) translateY(10px); }
+      to { opacity: 1; transform: scale(1) translateY(0); }
+    }
 
-        .modalHead {
-          display: flex; align-items: center; justify-content: space-between;
-          padding: 12px 16px;
-          border-bottom: 1px solid rgba(255,255,255,.12);
-        }
-        .modalHead h2 { margin: 0; font-size: 1.1rem; }
-        .closeBtn {
-          background: transparent; border: none; color: #9ca3af;
-          font-size: 1.6rem; line-height: 1; width: 32px; height: 32px;
-          cursor: pointer;
-        }
-        .closeBtn:hover { color: #fff; }
+    .modalHead {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 12px 16px;
+      border-bottom: 1px solid rgba(255,255,255,.12);
+    }
+    .modalHead h2 { margin: 0; font-size: 1.1rem; }
+    .closeBtn {
+      background: transparent; border: none; color: #9ca3af;
+      font-size: 1.6rem; line-height: 1; width: 32px; height: 32px;
+      cursor: pointer;
+    }
+    .closeBtn:hover { color: #fff; }
 
-        .modalBody {
-          padding: 16px;
-          max-height: calc(90vh - 60px); /* 90vh - header height */
-          overflow: auto;
-        }
-      `}</style>
+    .modalBody {
+      padding: 16px;
+      max-height: calc(90vh - 60px); /* 90vh - header height */
+      overflow: auto;
+    }
+  `}</style>
     </div>
   );
 }
@@ -891,7 +922,7 @@ function DetailModal({ warga, all, onClose, onEdit }: { warga: Warga; all: Warga
             <span className="lbl">Anak</span>
             <span className="val">{
               keluarga.anak.length === 0 ? '-' :
-              keluarga.anak.map(a => `${a.nama} ${a.nik}`).join(', ')
+                keluarga.anak.map(a => `${a.nama} ${a.nik}`).join(', ')
             }</span>
           </div>
         </div>
@@ -919,56 +950,56 @@ function DetailModal({ warga, all, onClose, onEdit }: { warga: Warga; all: Warga
         <button className="btn primary" onClick={onEdit}>Edit Warga Ini</button>
       </footer>
       <style jsx>{`
-        .detailGrid { display: grid; grid-template-columns: 140px 1fr; gap: 10px; }
-        .stat { display: contents; } /* Make children align to grid */
-        .stat .lbl { color: #9ca3af; }
-        .stat .val { color: #e5e7eb; font-weight: 500; }
-        .stat .val code { background: rgba(255,255,255,.08); padding: 2px 6px; border-radius: 6px; }
+    .detailGrid { display: grid; grid-template-columns: 140px 1fr; gap: 10px; }
+    .stat { display: contents; } /* Make children align to grid */
+    .stat .lbl { color: #9ca3af; }
+    .stat .val { color: #e5e7eb; font-weight: 500; }
+    .stat .val code { background: rgba(255,255,255,.08); padding: 2px 6px; border-radius: 6px; }
 
-        .kkSection {
-          margin-top: 20px;
-          border-top: 1px solid rgba(255,255,255,.12);
-          padding-top: 16px;
-        }
-        .subHead { margin: 0 0 12px; font-size: 1rem; color: #a7f3d0; }
-        
-        .kkList { display: grid; gap: 8px; }
-        .kkRow { display: grid; grid-template-columns: 140px 1fr; gap: 10px; }
-        .kkRow .lbl { color: #9ca3af; }
-        .kkRow .val { color: #e5e7eb; word-break: break-all; }
+    .kkSection {
+      margin-top: 20px;
+      border-top: 1px solid rgba(255,255,255,.12);
+      padding-top: 16px;
+    }
+    .subHead { margin: 0 0 12px; font-size: 1rem; color: #a7f3d0; }
+    
+    .kkList { display: grid; gap: 8px; }
+    .kkRow { display: grid; grid-template-columns: 140px 1fr; gap: 10px; }
+    .kkRow .lbl { color: #9ca3af; }
+    .kkRow .val { color: #e5e7eb; word-break: break-all; }
 
-        .summaryBar { display: flex; align-items: center; justify-content: space-between; margin-top: 12px; }
-        .dots { display: flex; align-items: center; gap: 4px; }
-        .dots span { width: 10px; height: 10px; border-radius: 99px; }
-        .kkTot { color: #9ca3af; font-size: .9rem; }
+    .summaryBar { display: flex; align-items: center; justify-content: space-between; margin-top: 12px; }
+    .dots { display: flex; align-items: center; gap: 4px; }
+    .dots span { width: 10px; height: 10px; border-radius: 99px; }
+    .kkTot { color: #9ca3af; font-size: .9rem; }
 
-        .members { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
-        .chip {
-          border: 1px solid rgba(255,255,255,.12); background: rgba(255,255,255,.03);
-          color: #e5e7eb; padding: 6px 10px; border-radius: 999px;
-          cursor: default;
-        }
+    .members { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+    .chip {
+      border: 1px solid rgba(255,255,255,.12); background: rgba(255,255,255,.03);
+      color: #e5e7eb; padding: 6px 10px; border-radius: 999px;
+      cursor: default;
+    }
 
-        .modalFoot {
-          margin-top: 20px;
-          padding-top: 16px;
-          border-top: 1px solid rgba(255,255,255,.12);
-          display: flex; justify-content: flex-end; gap: 10px;
-        }
-        .btn {
-          background: rgba(255,255,255,.08); color: #e5e7eb; border: 1px solid rgba(255,255,255,.12);
-          padding: 8px 12px; border-radius: 8px; font-weight: 500;
-        }
-        .btn.primary { background: #22c55e; color: #fff; border: none; font-weight: 700; }
-      `}</style>
+    .modalFoot {
+      margin-top: 20px;
+      padding-top: 16px;
+      border-top: 1px solid rgba(255,255,255,.12);
+      display: flex; justify-content: flex-end; gap: 10px;
+    }
+    .btn {
+      background: rgba(255,255,255,.08); color: #e5e7eb; border: 1px solid rgba(255,255,255,.12);
+      padding: 8px 12px; border-radius: 8px; font-weight: 500;
+    }
+    .btn.primary { background: #22c55e; color: #fff; border: none; font-weight: 700; }
+  `}</style>
     </Modal>
   );
 }
 
-/* Modal Form Warga (Edit) */
+/* Modal Form Warga (Edit / Add Single) */
 function WargaFormModal(
   { initial, onClose, onSubmit, onQuickAddChild }:
-  { initial?: Warga; onClose: () => void; onSubmit: (w: Omit<Warga, 'id'>) => void; onQuickAddChild: (c: { nama: string; nik: string; tglLahir: string }) => void; }
+    { initial?: Warga; onClose: () => void; onSubmit: (w: Omit<Warga, 'id'>) => void; onQuickAddChild: (c: { nama: string; nik: string; tglLahir: string }) => void; }
 ) {
   const [w, setW] = useState(() => initial ? { ...initial } : {
     nama: '', nik: '', noKk: '', tglLahir: '', peran: 'Anak' as Peran, status: 'Lajang' as Status,
@@ -985,7 +1016,7 @@ function WargaFormModal(
     e.preventDefault();
     onSubmit(w);
   };
-  
+
   const handleAddAnak = (e: React.FormEvent) => {
     e.preventDefault();
     onQuickAddChild(anak);
@@ -993,7 +1024,7 @@ function WargaFormModal(
     setShowAddAnak(false); // Sembunyikan form
   };
 
-  const title = initial ? 'Edit Warga' : 'Tambah Warga';
+  const title = initial ? 'Edit Warga' : 'Tambah Warga Perorangan';
 
   return (
     <Modal onClose={onClose} title={title}>
@@ -1031,9 +1062,9 @@ function WargaFormModal(
           <div className="field">
             <label htmlFor="status">Status Pernikahan</label>
             <select id="status" value={w.status} onChange={(e) => setField('status', e.target.value as Status)}>
+              <option value="Lajang">Lajang</option>
               <option value="Menikah">Menikah</option>
               <option value="Cerai">Cerai</option>
-              <option value="Lajang">Lajang</option>
             </select>
           </div>
         </div>
@@ -1043,27 +1074,27 @@ function WargaFormModal(
           <button type="submit" className="btn primary">Simpan</button>
         </footer>
       </form>
-      
+
       {/* Quick Add Anak (hanya muncul jika mengedit KK/Istri) */}
       {initial && (w.peran === 'Kepala Keluarga' || w.peran === 'Istri') && (
         <div className="quickAdd">
           <button className="btn" onClick={() => setShowAddAnak(s => !s)}>
             {showAddAnak ? 'Batal Tambah Anak' : `+ Tambah Anak ke KK ${w.noKk}`}
           </button>
-          
+
           {showAddAnak && (
             <form onSubmit={handleAddAnak} className="formGrid">
               <div className="field">
                 <label htmlFor="anakNama">Nama Anak</label>
-                <input id="anakNama" value={anak.nama} onChange={(e) => setAnak(a => ({...a, nama: e.target.value}))} placeholder="Nama" />
+                <input id="anakNama" value={anak.nama} onChange={(e) => setAnak(a => ({ ...a, nama: e.target.value }))} placeholder="Nama" />
               </div>
               <div className="field">
                 <label htmlFor="anakNik">NIK Anak (16 digit)</label>
-                <input id="anakNik" value={anak.nik} onChange={(e) => setAnak(a => ({...a, nik: e.target.value}))} placeholder="320..." maxLength={16} />
+                <input id="anakNik" value={anak.nik} onChange={(e) => setAnak(a => ({ ...a, nik: e.target.value }))} placeholder="320..." maxLength={16} />
               </div>
               <div className="field">
                 <label htmlFor="anakTgl">Tgl Lahir Anak</label>
-                <input id="anakTgl" type="date" value={anak.tglLahir} onChange={(e) => setAnak(a => ({...a, tglLahir: e.target.value}))} />
+                <input id="anakTgl" type="date" value={anak.tglLahir} onChange={(e) => setAnak(a => ({ ...a, tglLahir: e.target.value }))} />
               </div>
               <footer className="modalFoot full">
                 <button type="submit" className="btn primary">Simpan Anak</button>
@@ -1074,38 +1105,38 @@ function WargaFormModal(
       )}
 
       <style jsx>{`
-        .formGrid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px 12px; }
-        .group { display: grid; gap: 10px; align-content: start; }
-        .group h4 { margin: 0 0 4px; color: #a7f3d0; font-size: .9rem; }
-        .full { grid-column: 1 / -1; }
-        
-        .field { display: grid; gap: 4px; }
-        .field label { color: #9ca3af; font-size: .85rem; }
-        .field input, .field select {
-          background: rgba(255,255,255,.04); color: #e5e7eb; border: 1px solid rgba(255,255,255,.12);
-          padding: 8px 10px; border-radius: 8px;
-        }
+    .formGrid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px 12px; }
+    .group { display: grid; gap: 10px; align-content: start; }
+    .group h4 { margin: 0 0 4px; color: #a7f3d0; font-size: .9rem; }
+    .full { grid-column: 1 / -1; }
+    
+    .field { display: grid; gap: 4px; }
+    .field label { color: #9ca3af; font-size: .85rem; }
+    .field input, .field select {
+      background: rgba(255,255,255,.04); color: #e5e7eb; border: 1px solid rgba(255,255,255,.12);
+      padding: 8px 10px; border-radius: 8px;
+    }
 
-        .modalFoot {
-          margin-top: 12px;
-          padding-top: 16px;
-          border-top: 1px solid rgba(255,255,255,.12);
-          display: flex; justify-content: flex-end; gap: 10px;
-        }
-        .btn {
-          background: rgba(255,255,255,.08); color: #e5e7eb; border: 1px solid rgba(255,255,255,.12);
-          padding: 8px 12px; border-radius: 8px; font-weight: 500;
-        }
-        .btn.primary { background: #22c55e; color: #fff; border: none; font-weight: 700; }
-        
-        .quickAdd {
-          margin-top: 16px;
-          padding-top: 16px;
-          border-top: 1px dashed rgba(255,255,255,.2);
-          display: grid; gap: 12px;
-        }
-        .quickAdd .btn { background: #3b82f6; color: #fff; border: none; }
-      `}</style>
+    .modalFoot {
+      margin-top: 12px;
+      padding-top: 16px;
+      border-top: 1px solid rgba(255,255,255,.12);
+      display: flex; justify-content: flex-end; gap: 10px;
+    }
+    .btn {
+      background: rgba(255,255,255,.08); color: #e5e7eb; border: 1px solid rgba(255,255,255,.12);
+      padding: 8px 12px; border-radius: 8px; font-weight: 500;
+    }
+    .btn.primary { background: #22c55e; color: #fff; border: none; font-weight: 700; }
+    
+    .quickAdd {
+      margin-top: 16px;
+      padding-top: 16px;
+      border-top: 1px dashed rgba(255,255,255,.2);
+      display: grid; gap: 12px;
+    }
+    .quickAdd .btn { background: #3b82f6; color: #fff; border: none; }
+  `}</style>
     </Modal>
   );
 }
@@ -1113,17 +1144,17 @@ function WargaFormModal(
 /* Modal Form Keluarga (Create) */
 function KeluargaFormModal(
   { onClose, onSubmit }:
-  { onClose: () => void; onSubmit: (k: KeluargaInput) => void; }
+    { onClose: () => void; onSubmit: (k: KeluargaInput) => void; }
 ) {
   const [noKk, setNoKk] = useState('');
   const [kepala, setKepala] = useState({ nama: '', nik: '', tglLahir: '' });
   const [istri, setIstri] = useState({ nama: '', nik: '', tglLahir: '' });
   const [anak, setAnak] = useState<Array<{ nama: string; nik: string; tglLahir: string }>>([]);
 
-  const setK = (f: 'nama'|'nik'|'tglLahir', v: string) => setKepala(c => ({...c, [f]: v}));
-  const setI = (f: 'nama'|'nik'|'tglLahir', v: string) => setIstri(c => ({...c, [f]: v}));
-  const setA = (idx: number, f: 'nama'|'nik'|'tglLahir', v: string) => {
-    setAnak(curr => curr.map((a, i) => i === idx ? {...a, [f]: v} : a));
+  const setK = (f: 'nama' | 'nik' | 'tglLahir', v: string) => setKepala(c => ({ ...c, [f]: v }));
+  const setI = (f: 'nama' | 'nik' | 'tglLahir', v: string) => setIstri(c => ({ ...c, [f]: v }));
+  const setA = (idx: number, f: 'nama' | 'nik' | 'tglLahir', v: string) => {
+    setAnak(curr => curr.map((a, i) => i === idx ? { ...a, [f]: v } : a));
   };
   const addAnak = () => setAnak(curr => [...curr, { nama: '', nik: '', tglLahir: '' }]);
   const removeAnak = (idx: number) => setAnak(curr => curr.filter((_, i) => i !== idx));
@@ -1140,7 +1171,7 @@ function KeluargaFormModal(
           <label htmlFor="noKk">No KK (16 digit)</label>
           <input id="noKk" value={noKk} onChange={(e) => setNoKk(e.target.value)} placeholder="320..." maxLength={16} />
         </div>
-        
+
         {/* Kepala Keluarga */}
         <div className="group full head">
           <h4>Kepala Keluarga (Wajib)</h4>
@@ -1154,7 +1185,7 @@ function KeluargaFormModal(
             <label>Tgl Lahir</label><input type="date" value={kepala.tglLahir} onChange={e => setK('tglLahir', e.target.value)} />
           </div>
         </div>
-        
+
         {/* Istri */}
         <div className="group full">
           <h4>Istri (Opsional)</h4>
@@ -1168,7 +1199,7 @@ function KeluargaFormModal(
             <label>Tgl Lahir</label><input type="date" value={istri.tglLahir} onChange={e => setI('tglLahir', e.target.value)} />
           </div>
         </div>
-        
+
         {/* Anak */}
         <div className="group full">
           <h4>Anak (Opsional)</h4>
@@ -1195,38 +1226,87 @@ function KeluargaFormModal(
         </footer>
       </form>
       <style jsx>{`
-        .formGrid { display: grid; grid-template-columns: 1fr; gap: 16px; }
-        .group { display: grid; gap: 10px; align-content: start; border-radius: 12px; border: 1px solid rgba(255,255,255,.1); padding: 10px; }
-        .group.head {
-          display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 10px; align-items: end;
-          background: rgba(255,255,255,.02);
-        }
-        .group h4 { margin: 0; color: #a7f3d0; font-size: .9rem; grid-column: 1 / -1; }
-        .full { grid-column: 1 / -1; }
-        
-        .field { display: grid; gap: 4px; }
-        .field label { color: #9ca3af; font-size: .85rem; }
-        .field input, .field select {
-          background: rgba(255,255,255,.04); color: #e5e7eb; border: 1px solid rgba(255,255,255,.12);
-          padding: 8px 10px; border-radius: 8px;
-        }
+    .formGrid { display: grid; grid-template-columns: 1fr; gap: 16px; }
+    .group { display: grid; gap: 10px; align-content: start; border-radius: 12px; border: 1px solid rgba(255,255,255,.1); padding: 10px; }
+    .group.head {
+      display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 10px; align-items: end;
+      background: rgba(255,255,255,.02);
+    }
+    .group h4 { margin: 0; color: #a7f3d0; font-size: .9rem; grid-column: 1 / -1; }
+    .full { grid-column: 1 / -1; }
+    
+    .field { display: grid; gap: 4px; }
+    .field label { color: #9ca3af; font-size: .85rem; }
+    .field input, .field select {
+      background: rgba(255,255,255,.04); color: #e5e7eb; border: 1px solid rgba(255,255,255,.12);
+      padding: 8px 10px; border-radius: 8px;
+    }
 
-        .modalFoot {
-          margin-top: 12px;
-          padding-top: 16px;
-          border-top: 1px solid rgba(255,255,255,.12);
-          display: flex; justify-content: flex-end; gap: 10px;
-        }
-        .btn {
-          background: rgba(255,255,255,.08); color: #e5e7eb; border: 1px solid rgba(255,255,255,.12);
-          padding: 8px 12px; border-radius: 8px; font-weight: 500;
-        }
-        .btn.primary { background: #22c55e; color: #fff; border: none; font-weight: 700; }
-        .btn.danger.sm {
-          width: 36px; height: 36px; padding: 0; display: grid; place-items: center;
-          border-color: rgba(239,68,68,.35); color: #fecaca;
-        }
+    .modalFoot {
+      margin-top: 12px;
+      padding-top: 16px;
+      border-top: 1px solid rgba(255,255,255,.12);
+      display: flex; justify-content: flex-end; gap: 10px;
+    }
+    .btn {
+      background: rgba(255,255,255,.08); color: #e5e7eb; border: 1px solid rgba(255,255,255,.12);
+      padding: 8px 12px; border-radius: 8px; font-weight: 500;
+    }
+    .btn.primary { background: #22c55e; color: #fff; border: none; font-weight: 700; }
+    .btn.danger.sm {
+      width: 36px; height: 36px; padding: 0; display: grid; place-items: center;
+      border-color: rgba(239,68,68,.35); color: #fecaca;
+    }
+  `}</style>
+    </Modal>
+  );
+}
+
+/* Modal Pilihan Tambah Warga */
+function AddChoiceModal({ onClose, onSelectSingle, onSelectFamily }: { onClose: () => void; onSelectSingle: () => void; onSelectFamily: () => void; }) {
+  return (
+    <Modal onClose={onClose} title="Pilih Jenis Penambahan" width={480}>
+      <div className="choice-container">
+        <p>Anda ingin menambahkan warga perorangan (misal: lajang, pindahan) atau satu keluarga baru (suami, istri, anak)?</p>
+        <div className="choice-buttons">
+          <button className="btn" onClick={onSelectSingle}>
+            <UserIcon />
+            <span>Tambah Perorangan</span>
+          </button>
+          <button className="btn primary" onClick={onSelectFamily}>
+            <UsersIcon />
+            <span>Tambah Keluarga Baru</span>
+          </button>
+        </div>
+      </div>
+      {/* --- [START] PERUBAHAN RESPONSIVE --- */}
+      <style jsx>{`
+          .choice-container { display: grid; gap: 16px; text-align: center; }
+          .choice-container p { margin: 0; color: #cbd5e1; line-height: 1.6; }
+          .choice-buttons { 
+            display: grid; 
+            grid-template-columns: 1fr; /* Default untuk mobile: 1 kolom */
+            gap: 12px; 
+            margin-top: 12px; 
+          }
+          .btn {
+              background: rgba(255,255,255,.08); color: #e5e7eb; border: 1px solid rgba(255,255,255,.12);
+              padding: 12px; border-radius: 12px; font-weight: 500; font-size: 1rem;
+              display: flex; flex-direction: column; align-items: center; gap: 8px;
+              text-align: center;
+              transition: all .2s;
+          }
+          .btn.primary { background: #22c55e; color: #fff; border: none; font-weight: 700; }
+          .btn:hover { filter: brightness(1.1); transform: translateY(-2px); }
+
+          /* Tampilan untuk layar lebih besar dari 480px */
+          @media (min-width: 480px) {
+            .choice-buttons {
+              grid-template-columns: 1fr 1fr; /* Kembali ke 2 kolom */
+            }
+          }
       `}</style>
+      {/* --- [END] PERUBAHAN RESPONSIVE --- */}
     </Modal>
   );
 }
@@ -1234,7 +1314,7 @@ function KeluargaFormModal(
 /* Modal Konfirmasi Hapus */
 function ConfirmModal(
   { title, message, onCancel, onConfirm }:
-  { title: string; message: string; onCancel: () => void; onConfirm: () => void; }
+    { title: string; message: string; onCancel: () => void; onConfirm: () => void; }
 ) {
   return (
     <Modal onClose={onCancel} title={title} width={420}>
@@ -1243,19 +1323,7 @@ function ConfirmModal(
         <button type="button" className="btn" onClick={onCancel}>Batal</button>
         <button type="button" className="btn danger" onClick={onConfirm}>Ya, Hapus</button>
       </footer>
-      <style jsx>{`
-        .modalFoot {
-          margin-top: 20px;
-          padding-top: 16px;
-          border-top: 1px solid rgba(255,255,255,.12);
-          display: flex; justify-content: flex-end; gap: 10px;
-        }
-        .btn {
-          background: rgba(255,255,255,.08); color: #e5e7eb; border: 1px solid rgba(255,255,255,.12);
-          padding: 8px 12px; border-radius: 8px; font-weight: 500;
-        }
-        .btn.danger { background: #ef4444; color: #fff; border: none; font-weight: 700; }
-      `}</style>
+      <style jsx>{` .modalFoot { margin-top: 20px; padding-top: 16px; border-top: 1px solid rgba(255,255,255,.12); display: flex; justify-content: flex-end; gap: 10px; } .btn { background: rgba(255,255,255,.08); color: #e5e7eb; border: 1px solid rgba(255,255,255,.12); padding: 8px 12px; border-radius: 8px; font-weight: 500; } .btn.danger { background: #ef4444; color: #fff; border: none; font-weight: 700; } `}</style>
     </Modal>
   );
 }
@@ -1277,28 +1345,7 @@ function NoticeModal({ notice, onClose }: { notice: Notice; onClose: () => void;
       <strong className="noticeTitle" style={{ color }}>{notice.title ?? 'Notifikasi'}</strong>
       <p className="noticeMsg">{notice.message}</p>
       <button className="closeBtn" onClick={onClose}>×</button>
-      <style jsx>{`
-        .notice {
-          position: fixed; top: 16px; right: 16px; z-index: 99;
-          background: #1f2229; color: #e5e7eb;
-          border: 1px solid rgba(255,255,255,.12);
-          border-left-width: 4px;
-          border-radius: 8px;
-          padding: 12px 16px;
-          width: 90%; max-width: 340px;
-          box-shadow: 0 4px 12px rgba(0,0,0,.2);
-          animation: slideIn .2s ease-out;
-        }
-        @keyframes slideIn { from { opacity: 0; transform: translateX(20px); } to { opacity: 1; transform: translateX(0); } }
-        .noticeTitle { display: block; margin-bottom: 4px; font-size: 1rem; }
-        .noticeMsg { margin: 0; font-size: .9rem; }
-        .closeBtn {
-          position: absolute; top: 4px; right: 4px;
-          background: transparent; border: none; color: #9ca3af;
-          font-size: 1.4rem; line-height: 1; width: 28px; height: 28px;
-          cursor: pointer;
-        }
-      `}</style>
+      <style jsx>{` .notice { position: fixed; top: 16px; right: 16px; z-index: 99; background: #1f2229; color: #e5e7eb; border: 1px solid rgba(255,255,255,.12); border-left-width: 4px; border-radius: 8px; padding: 12px 16px; width: 90%; max-width: 340px; box-shadow: 0 4px 12px rgba(0,0,0,.2); animation: slideIn .2s ease-out; } @keyframes slideIn { from { opacity: 0; transform: translateX(20px); } to { opacity: 1; transform: translateX(0); } } .noticeTitle { display: block; margin-bottom: 4px; font-size: 1rem; } .noticeMsg { margin: 0; font-size: .9rem; } .closeBtn { position: absolute; top: 4px; right: 4px; background: transparent; border: none; color: #9ca3af; font-size: 1.4rem; line-height: 1; width: 28px; height: 28px; cursor: pointer; } `}</style>
     </div>
   );
 }
