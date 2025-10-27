@@ -44,27 +44,6 @@ export default function Sidebar({
         </svg>
       ),
     },
-    {
-      href: '/laporan',
-      label: 'Laporan',
-      icon: (
-        <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden fill="none">
-          <path d="M3 3h14l4 4v14a1 1 0 0 1-1 1H3V3z" stroke="currentColor" strokeWidth="1.4" />
-          <path d="M17 3v4h4" stroke="currentColor" strokeWidth="1.4" />
-          <path d="M7 13h10M7 9h6M7 17h8" stroke="currentColor" strokeWidth="1.4" />
-        </svg>
-      ),
-    },
-    {
-      href: '/grafik',
-      label: 'Grafik',
-      icon: (
-        <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden fill="none">
-          <path d="M3 3v18h18" stroke="currentColor" strokeWidth="1.4" />
-          <path d="M7 15l4-4 4 3 5-7" stroke="currentColor" strokeWidth="1.4" />
-        </svg>
-      ),
-    },
   ];
 
   return (

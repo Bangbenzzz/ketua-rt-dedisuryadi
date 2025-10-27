@@ -1,7 +1,12 @@
 // src/lib/firebase.ts
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getFirestore, connectFirestoreEmulator } from 'firebase/firestore';
-import { getAuth, connectAuthEmulator } from 'firebase/auth';
+import {
+  getAuth,
+  connectAuthEmulator,
+  setPersistence,
+  browserSessionPersistence,
+} from 'firebase/auth';
 
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY!,
@@ -18,18 +23,24 @@ const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
 export const db = getFirestore(app);
 export const auth = getAuth(app);
 
-// Debug ringan di browser: pastikan nyambung ke project yang benar
+// Hanya jalan di browser
 if (typeof window !== 'undefined') {
+  // Debug ringan di browser: pastikan nyambung ke project yang benar
   // Tidak menampilkan apiKey
   // @ts-ignore
   console.info('[Firebase] projectId:', app.options?.projectId, '| authDomain:', app.options?.authDomain);
-}
 
-// Opsi emulator (aktifkan dengan set NEXT_PUBLIC_FIREBASE_EMULATOR=1 di .env.local)
-if (typeof window !== 'undefined' && process.env.NEXT_PUBLIC_FIREBASE_EMULATOR === '1') {
-  try {
-    connectAuthEmulator(auth, 'http://localhost:9099', { disableWarnings: true });
-    connectFirestoreEmulator(db, 'localhost', 8080);
-    console.info('[Firebase] menggunakan Emulator (Auth=9099, Firestore=8080)');
-  } catch {}
+  // Opsi emulator (aktifkan dengan set NEXT_PUBLIC_FIREBASE_EMULATOR=1 di .env.local)
+  if (process.env.NEXT_PUBLIC_FIREBASE_EMULATOR === '1') {
+    try {
+      connectAuthEmulator(auth, 'http://localhost:9099', { disableWarnings: true });
+      connectFirestoreEmulator(db, 'localhost', 8080);
+      console.info('[Firebase] menggunakan Emulator (Auth=9099, Firestore=8080)');
+    } catch {}
+  }
+
+  // Penting: session persistence -> logout otomatis saat tab ditutup
+  setPersistence(auth, browserSessionPersistence).catch((err) => {
+    console.warn('[Firebase] Gagal set session persistence:', err);
+  });
 }
