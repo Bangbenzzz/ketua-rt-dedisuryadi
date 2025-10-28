@@ -90,7 +90,7 @@ export default function WargaPageClient() {
   const [data, setData] = useState<Warga[]>([]);
   const [loaded, setLoaded] = useState(false);
 
-  // Password Gate: selalu minta password setiap kali buka halaman ini (tanpa simpan di session)
+  // Password Gate: selalu minta password (tanpa simpan status)
   const [authed, setAuthed] = useState(false);
   const handleAuthSuccess = () => { setAuthed(true); };
 
@@ -107,10 +107,8 @@ export default function WargaPageClient() {
   const [confirmDelete, setConfirmDelete] = useState<Warga | null>(null);
   const [notice, setNotice] = useState<Notice | null>(null);
 
-  // --- [START] PERUBAHAN YANG DITAMBAHKAN ---
   const [showAddChoiceModal, setShowAddChoiceModal] = useState(false);
   const [addMode, setAddMode] = useState<'family' | 'single'>('family');
-  // --- [END] PERUBAHAN YANG DITAMBAHKAN ---
 
   const showError = (message: string, title = 'Gagal') => setNotice({ type: 'error', title, message });
   const showSuccess = (message: string, title = 'Berhasil') => setNotice({ type: 'success', title, message });
@@ -201,7 +199,6 @@ export default function WargaPageClient() {
     const birth = parseYmd(input.tglLahir)!;
     if (birth > new Date()) return showError('Tanggal lahir tidak boleh di masa depan.');
 
-    // Cegah NIK duplikat (cek di state realtime)
     const nikExists = data.some((x) => x.nik === input.nik && x.id !== editingId);
     if (nikExists) return showError('NIK sudah terdaftar.');
 
@@ -369,7 +366,6 @@ export default function WargaPageClient() {
           <Spinner label="Memuat data" />
         </div>
         <style jsx>{` .pageLoader { min-height: 60vh; display: grid; place-items: center; } `}</style>
-
         {!authed && <PasswordGate onSuccess={handleAuthSuccess} />}
       </div>
     );
@@ -588,7 +584,15 @@ export default function WargaPageClient() {
       {!authed && <PasswordGate onSuccess={handleAuthSuccess} />}
 
       <style jsx>{`
-        .wrap { padding: 18px; display: grid; gap: 16px; }
+        /* Container center + max width + gutter */
+        .wrap {
+          width: 100%;
+          max-width: 1240px;
+          margin: 0 auto;
+          padding: 18px;
+          display: grid;
+          gap: 16px;
+        }
         @media (max-width: 640px) { .wrap { padding: 12px; } }
 
         /* Header */
@@ -619,17 +623,10 @@ export default function WargaPageClient() {
         .tab { background: transparent; color: #e5e7eb; padding: 8px 10px; border: none; }
         .tab.active { background: rgba(34,197,94,.16); color: #bbf7d0; }
         .search { display: inline-flex; align-items: center; gap: 8px; padding: 6px 10px; border: 1px solid rgba(255,255,255,.12); border-radius: 10px; background: rgba(255,255,255,.02); }
-        .search input { border: none; outline: none; background: transparent; color: #e5e7eb; width: clamp(120px, 32vw, 220px); }
+        .search input { border: none; outline: none; background: transparent; color: #e5e7eb; width: clamp(160px, 32vw, 240px); }
 
         .filter label, .right label { color: #9ca3af; font-size: .85rem; margin-right: 6px; }
         select { background: rgba(255,255,255,.04); color: #e5e7eb; border: 1px solid rgba(255,255,255,.12); padding: 6px 10px; border-radius: 8px; }
-
-        @media (max-width: 640px) { .left, .right { width: 100%; } }
-        @media (max-width: 480px) {
-          .toolbar { gap: 8px; }
-          .search { flex: 1; }
-          .search input { width: 100%; }
-        }
 
         .summary { display: grid; grid-template-columns: repeat(3, 1fr) auto; gap: 10px; align-items: center; }
         @media (max-width: 800px) { .summary { grid-template-columns: 1fr 1fr; } .summary .tot { grid-column: 1 / -1; text-align: left; margin-top: 4px; } }
@@ -640,9 +637,17 @@ export default function WargaPageClient() {
 
         .tot { color: #9ca3af; font-size: .9rem; text-align: right; }
 
-        .card { border: 1px solid rgba(255,255,255,.12); border-radius: 14px; background: rgba(255,255,255,.03); padding: 10px; }
+        .card { border: 1px solid rgba(255,255,255,.12); border-radius: 14px; background: rgba(255,255,255,.03); padding: 12px; }
 
-        .tableWrap { overflow: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; scrollbar-gutter: stable both-edges; }
+        /* Tabel: ada gutter kiri-kanan */
+        .tableWrap {
+          overflow: auto;
+          -webkit-overflow-scrolling: touch;
+          overscroll-behavior: contain;
+          scrollbar-gutter: stable both-edges;
+          padding: 0 8px 8px;
+          margin: 0 -8px;
+        }
         table.tbl { width: 100%; min-width: 980px; border-collapse: collapse; }
         @media (max-width: 1024px) { table.tbl { min-width: 900px; } }
         @media (max-width: 900px)  { table.tbl { min-width: 760px; } }
@@ -661,6 +666,7 @@ export default function WargaPageClient() {
           .tbl th:nth-child(3), .tbl td:nth-child(3) { width: 150px; }
         }
 
+        /* Mobile: tabel jadi kartu */
         @media (max-width: 700px) {
           .tbl thead {
             position: absolute; width: 1px; height: 1px; margin: -1px; border: 0; padding: 0;
@@ -706,7 +712,7 @@ export default function WargaPageClient() {
 
         .empty { color: #9ca3af; text-align: center; padding: 20px 6px; }
 
-        .kkGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; }
+        .kkGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
         @media (max-width: 420px) { .kkGrid { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); } }
         @media (max-width: 360px) { .kkGrid { grid-template-columns: 1fr; } }
         .kkCard { border: 1px solid rgba(255,255,255,.1); border-radius: 12px; overflow: hidden; background: rgba(255,255,255,.02); }
@@ -792,15 +798,22 @@ const LockIcon = () => <svg width="22" height="22" viewBox="0 0 24 24" fill="non
 MODAL COMPONENTS
 ================================================================================================ */
 
-/* Base Modal */
+/* Base Modal (freeze scroll) */
 function Modal({ children, onClose, title = 'Modal', width = 540 }: { children: React.ReactNode; onClose: () => void; title: string; width?: number; }) {
   useEffect(() => {
     const handleEsc = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
     document.addEventListener('keydown', handleEsc);
+
+    // Freeze scroll + sentuhan
+    const prevOverflow = document.body.style.overflow;
+    const prevTouch = (document.body.style as any).touchAction as string | undefined;
     document.body.style.overflow = 'hidden';
+    (document.body.style as any).touchAction = 'none';
+
     return () => {
       document.removeEventListener('keydown', handleEsc);
-      document.body.style.overflow = '';
+      document.body.style.overflow = prevOverflow;
+      (document.body.style as any).touchAction = prevTouch ?? '';
     };
   }, [onClose]);
 
@@ -820,12 +833,14 @@ function Modal({ children, onClose, title = 'Modal', width = 540 }: { children: 
       display: grid; place-items: center;
       padding: 16px;
       animation: fadeIn .15s ease-out;
+      overscroll-behavior: contain;
+      padding-bottom: calc(16px + env(safe-area-inset-bottom));
     }
     @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 
     .modal {
       width: 100%;
-      background: #1f2229; /* Slightly lighter than page bg */
+      background: #1f2229;
       color: #e5e7eb;
       border-radius: 16px; border: 1px solid rgba(255,255,255,.12);
       overflow: hidden;
@@ -852,7 +867,7 @@ function Modal({ children, onClose, title = 'Modal', width = 540 }: { children: 
 
     .modalBody {
       padding: 16px;
-      max-height: calc(90vh - 60px); /* 90vh - header height */
+      max-height: calc(90vh - 60px);
       overflow: auto;
     }
   `}</style>
@@ -941,16 +956,12 @@ function DetailModal({ warga, all, onClose, onEdit }: { warga: Warga; all: Warga
       </footer>
       <style jsx>{`
     .detailGrid { display: grid; grid-template-columns: 140px 1fr; gap: 10px; }
-    .stat { display: contents; } /* Make children align to grid */
+    .stat { display: contents; }
     .stat .lbl { color: #9ca3af; }
     .stat .val { color: #e5e7eb; font-weight: 500; }
     .stat .val code { background: rgba(255,255,255,.08); padding: 2px 6px; border-radius: 6px; }
 
-    .kkSection {
-      margin-top: 20px;
-      border-top: 1px solid rgba(255,255,255,.12);
-      padding-top: 16px;
-    }
+    .kkSection { margin-top: 20px; border-top: 1px solid rgba(255,255,255,.12); padding-top: 16px; }
     .subHead { margin: 0 0 12px; font-size: 1rem; color: #a7f3d0; }
     
     .kkList { display: grid; gap: 8px; }
@@ -970,16 +981,8 @@ function DetailModal({ warga, all, onClose, onEdit }: { warga: Warga; all: Warga
       cursor: default;
     }
 
-    .modalFoot {
-      margin-top: 20px;
-      padding-top: 16px;
-      border-top: 1px solid rgba(255,255,255,.12);
-      display: flex; justify-content: flex-end; gap: 10px;
-    }
-    .btn {
-      background: rgba(255,255,255,.08); color: #e5e7eb; border: 1px solid rgba(255,255,255,.12);
-      padding: 8px 12px; border-radius: 8px; font-weight: 500;
-    }
+    .modalFoot { margin-top: 20px; padding-top: 16px; border-top: 1px solid rgba(255,255,255,.12); display: flex; justify-content: flex-end; gap: 10px; }
+    .btn { background: rgba(255,255,255,.08); color: #e5e7eb; border: 1px solid rgba(255,255,255,.12); padding: 8px 12px; border-radius: 8px; font-weight: 500; }
     .btn.primary { background: #22c55e; color: #fff; border: none; font-weight: 700; }
   `}</style>
     </Modal>
@@ -1010,8 +1013,8 @@ function WargaFormModal(
   const handleAddAnak = (e: React.FormEvent) => {
     e.preventDefault();
     onQuickAddChild(anak);
-    setAnak({ nama: '', nik: '', tglLahir: '' }); // Reset form
-    setShowAddAnak(false); // Sembunyikan form
+    setAnak({ nama: '', nik: '', tglLahir: '' });
+    setShowAddAnak(false);
   };
 
   const title = initial ? 'Edit Warga' : 'Tambah Warga Perorangan';
@@ -1096,6 +1099,7 @@ function WargaFormModal(
 
       <style jsx>{`
     .formGrid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px 12px; }
+    @media (max-width: 640px) { .formGrid { grid-template-columns: 1fr; } }
     .group { display: grid; gap: 10px; align-content: start; }
     .group h4 { margin: 0 0 4px; color: #a7f3d0; font-size: .9rem; }
     .full { grid-column: 1 / -1; }
@@ -1269,13 +1273,12 @@ function AddChoiceModal({ onClose, onSelectSingle, onSelectFamily }: { onClose: 
           </button>
         </div>
       </div>
-      {/* --- [START] PERUBAHAN RESPONSIVE --- */}
       <style jsx>{`
           .choice-container { display: grid; gap: 16px; text-align: center; }
           .choice-container p { margin: 0; color: #cbd5e1; line-height: 1.6; }
           .choice-buttons { 
             display: grid; 
-            grid-template-columns: 1fr; /* Default untuk mobile: 1 kolom */
+            grid-template-columns: 1fr;
             gap: 12px; 
             margin-top: 12px; 
           }
@@ -1289,14 +1292,10 @@ function AddChoiceModal({ onClose, onSelectSingle, onSelectFamily }: { onClose: 
           .btn.primary { background: #22c55e; color: #fff; border: none; font-weight: 700; }
           .btn:hover { filter: brightness(1.1); transform: translateY(-2px); }
 
-          /* Tampilan untuk layar lebih besar dari 480px */
           @media (min-width: 480px) {
-            .choice-buttons {
-              grid-template-columns: 1fr 1fr; /* Kembali ke 2 kolom */
-            }
+            .choice-buttons { grid-template-columns: 1fr 1fr; }
           }
       `}</style>
-      {/* --- [END] PERUBAHAN RESPONSIVE --- */}
     </Modal>
   );
 }
@@ -1340,12 +1339,24 @@ function NoticeModal({ notice, onClose }: { notice: Notice; onClose: () => void;
   );
 }
 
-/* Password Gate (overlay elegan & responsif) */
+/* Password Gate (overlay elegan, responsif, freeze scroll) */
 function PasswordGate({ onSuccess }: { onSuccess: () => void }) {
   const [pw, setPw] = useState('');
   const [show, setShow] = useState(false);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+
+  // Freeze scroll saat gate aktif
+  useEffect(() => {
+    const prevOverflow = document.body.style.overflow;
+    const prevTouch = (document.body.style as any).touchAction as string | undefined;
+    document.body.style.overflow = 'hidden';
+    (document.body.style as any).touchAction = 'none';
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      (document.body.style as any).touchAction = prevTouch ?? '';
+    };
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1363,7 +1374,7 @@ function PasswordGate({ onSuccess }: { onSuccess: () => void }) {
       } else {
         setErr(data?.message || 'Password salah.');
       }
-    } catch (e) {
+    } catch {
       setErr('Gagal memverifikasi. Periksa koneksi Anda.');
     } finally {
       setLoading(false);
@@ -1422,6 +1433,8 @@ function PasswordGate({ onSuccess }: { onSuccess: () => void }) {
           backdrop-filter: blur(4px);
           display: grid; place-items: center;
           padding: 16px;
+          overscroll-behavior: contain;
+          padding-bottom: calc(16px + env(safe-area-inset-bottom));
         }
         .card {
           width: 100%; max-width: 420px;

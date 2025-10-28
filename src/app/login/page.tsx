@@ -1,10 +1,14 @@
-// src/app/login/page.tsx
 'use client';
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
-import { signInWithEmailAndPassword } from 'firebase/auth';
+import {
+  signInWithEmailAndPassword,
+  sendEmailVerification,
+  sendPasswordResetEmail,
+  signOut,
+} from 'firebase/auth';
 import { FirebaseError } from 'firebase/app';
 import { auth } from '@/lib/firebase';
 import styles from './login.module.css';
@@ -14,6 +18,7 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [infoMsg, setInfoMsg] = useState<string | null>(null);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const year = new Date().getFullYear();
@@ -23,10 +28,28 @@ export default function LoginPage() {
     if (loading) return;
 
     setErrorMsg(null);
-    setLoading(true);
+    setInfoMsg(null);
 
+    const mail = email.trim();
+    if (!mail || !password) {
+      setErrorMsg('Email dan kata sandi wajib diisi.');
+      return;
+    }
+
+    setLoading(true);
     try {
-      await signInWithEmailAndPassword(auth, email.trim(), password);
+      const cred = await signInWithEmailAndPassword(auth, mail, password);
+
+      // Wajib email terverifikasi (sesuai Firestore Rules)
+      if (!cred.user.emailVerified) {
+        await sendEmailVerification(cred.user);
+        await signOut(auth);
+        setInfoMsg(
+          'Email belum terverifikasi. Kami sudah kirim link verifikasi ke inbox/spam. Setelah verifikasi, login lagi ya.'
+        );
+        return;
+      }
+
       router.replace('/dashboard');
     } catch (err) {
       const fb = err as FirebaseError;
@@ -59,12 +82,33 @@ export default function LoginPage() {
           base = 'Konfigurasi Firebase tidak valid. Cek .env dan Project Settings.';
           break;
       }
-
-      // Saat dev, tampilkan kode error untuk diagnosa cepat
       const showCode = process.env.NODE_ENV !== 'production' && fb.code ? ` [${fb.code}]` : '';
       setErrorMsg(base + showCode);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const onForgot = async () => {
+    setErrorMsg(null);
+    setInfoMsg(null);
+
+    const mail = email.trim();
+    if (!mail) {
+      setErrorMsg('Masukkan email dulu ya.');
+      return;
+    }
+
+    try {
+      await sendPasswordResetEmail(auth, mail);
+      setInfoMsg('Link reset password dikirim. Cek inbox/spam email kamu.');
+    } catch (e: any) {
+      const code = e?.code;
+      let msg = 'Gagal mengirim reset password.';
+      if (code === 'auth/user-not-found') msg = 'Email tidak terdaftar.';
+      else if (code === 'auth/invalid-email') msg = 'Format email tidak valid.';
+      else if (code === 'auth/too-many-requests') msg = 'Terlalu banyak percobaan, coba lagi nanti.';
+      setErrorMsg(msg);
     }
   };
 
@@ -142,6 +186,7 @@ export default function LoginPage() {
           </div>
 
           {errorMsg && <p className={styles.err} role="alert">{errorMsg}</p>}
+          {infoMsg && <p className={styles.info} role="status">{infoMsg}</p>}
 
           <button
             className={`${styles.btn} ${styles.primary}`}
@@ -149,6 +194,18 @@ export default function LoginPage() {
             disabled={loading || !email || !password}
           >
             {loading ? 'Memproses…' : 'Masuk'}
+          </button>
+
+          {/* Ubah jadi warna merah */}
+          <button
+            type="button"
+            className={`${styles.btn} ${styles.danger}`}
+            onClick={onForgot}
+            disabled={loading || !email}
+            aria-label="Kirim link reset password ke email"
+            title="Lupa password?"
+          >
+            Lupa password?
           </button>
         </form>
 
