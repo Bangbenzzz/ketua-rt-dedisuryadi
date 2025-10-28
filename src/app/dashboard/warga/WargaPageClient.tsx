@@ -29,9 +29,6 @@ type KeluargaInput = {
 
 type Notice = { type: 'success' | 'error' | 'info' | 'warning'; title?: string; message: string };
 
-// Password akses di-inject saat build dari NEXT_PUBLIC_WARGA_PASSWORD
-const ACCESS_PASSWORD = process.env.NEXT_PUBLIC_WARGA_PASSWORD || '';
-
 /* Utils umur */
 function parseYmd(s: string) {
   const [y, m, d] = s.split('-').map(Number);
@@ -92,23 +89,10 @@ async function logTransaksi(action: 'create' | 'update' | 'delete', payload: any
 export default function WargaPageClient() {
   const [data, setData] = useState<Warga[]>([]);
   const [loaded, setLoaded] = useState(false);
-   // Guard akses dengan password
+
+  // Password Gate: selalu minta password setiap kali buka halaman ini (tanpa simpan di session)
   const [authed, setAuthed] = useState(false);
-  useEffect(() => {
-    // Jika sudah terverifikasi di session, langsung lolos. Jika tidak ada password di env, jangan blok.
-    try {
-      const ok = sessionStorage.getItem('warga_auth_ok') === '1';
-      setAuthed(ok || !ACCESS_PASSWORD);
-    } catch {
-      setAuthed(!ACCESS_PASSWORD);
-    }
-  }, []);
-
-  const handleAuthSuccess = () => {
-    setAuthed(true);
-    try { sessionStorage.setItem('warga_auth_ok', '1'); } catch {}
-  };
-
+  const handleAuthSuccess = () => { setAuthed(true); };
 
   const [view, setView] = useState<'tabel' | 'kk'>('tabel');
   const [query, setQuery] = useState('');
@@ -385,6 +369,8 @@ export default function WargaPageClient() {
           <Spinner label="Memuat data" />
         </div>
         <style jsx>{` .pageLoader { min-height: 60vh; display: grid; place-items: center; } `}</style>
+
+        {!authed && <PasswordGate onSuccess={handleAuthSuccess} />}
       </div>
     );
   }
@@ -598,6 +584,9 @@ export default function WargaPageClient() {
         <NoticeModal notice={notice} onClose={() => setNotice(null)} />
       )}
 
+      {/* Password Gate overlay */}
+      {!authed && <PasswordGate onSuccess={handleAuthSuccess} />}
+
       <style jsx>{`
         .wrap { padding: 18px; display: grid; gap: 16px; }
         @media (max-width: 640px) { .wrap { padding: 12px; } }
@@ -797,6 +786,7 @@ const UsersIcon = () => <svg width="18" height="18" viewBox="0 0 24 24" fill="no
 const EyeIcon = () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg>;
 const EditIcon = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>;
 const TrashIcon = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /><line x1="10" y1="11" x2="10" y2="17" /><line x1="14" y1="11" x2="14" y2="17" /></svg>;
+const LockIcon = () => <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>;
 
 /* ================================================================================================
 MODAL COMPONENTS
@@ -1346,6 +1336,154 @@ function NoticeModal({ notice, onClose }: { notice: Notice; onClose: () => void;
       <p className="noticeMsg">{notice.message}</p>
       <button className="closeBtn" onClick={onClose}>×</button>
       <style jsx>{` .notice { position: fixed; top: 16px; right: 16px; z-index: 99; background: #1f2229; color: #e5e7eb; border: 1px solid rgba(255,255,255,.12); border-left-width: 4px; border-radius: 8px; padding: 12px 16px; width: 90%; max-width: 340px; box-shadow: 0 4px 12px rgba(0,0,0,.2); animation: slideIn .2s ease-out; } @keyframes slideIn { from { opacity: 0; transform: translateX(20px); } to { opacity: 1; transform: translateX(0); } } .noticeTitle { display: block; margin-bottom: 4px; font-size: 1rem; } .noticeMsg { margin: 0; font-size: .9rem; } .closeBtn { position: absolute; top: 4px; right: 4px; background: transparent; border: none; color: #9ca3af; font-size: 1.4rem; line-height: 1; width: 28px; height: 28px; cursor: pointer; } `}</style>
+    </div>
+  );
+}
+
+/* Password Gate (overlay elegan & responsif) */
+function PasswordGate({ onSuccess }: { onSuccess: () => void }) {
+  const [pw, setPw] = useState('');
+  const [show, setShow] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setErr(null);
+    setLoading(true);
+    try {
+      const res = await fetch('/api/warga-auth/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: pw }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data?.ok) {
+        onSuccess();
+      } else {
+        setErr(data?.message || 'Password salah.');
+      }
+    } catch (e) {
+      setErr('Gagal memverifikasi. Periksa koneksi Anda.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="authScrim" role="dialog" aria-modal="true" aria-label="Kunci halaman daftar warga">
+      <div className="card">
+        <div className="iconWrap">
+          <div className="icon"><LockIcon /></div>
+        </div>
+        <h2>Masuk ke Daftar Warga</h2>
+        <p className="sub">Halaman ini dilindungi. Jika ingin melanjutkan silahkan masukan password.</p>
+
+        <form onSubmit={handleSubmit} className="form">
+          <label className="label">Password</label>
+          <div className="pwBox">
+            <input
+              type={show ? 'text' : 'password'}
+              value={pw}
+              onChange={(e) => setPw(e.target.value)}
+              placeholder="Masukan Password"
+              autoFocus
+            />
+            <button type="button" className="toggle" onClick={() => setShow(s => !s)}>
+              {show ? 'Sembunyikan' : 'Tampilkan'}
+            </button>
+          </div>
+
+          {err && <div className="err">{err}</div>}
+
+          <div className="actions">
+            <a className="btn ghost" href="/dashboard">← Dashboard</a>
+            <button type="submit" className="btn primary" disabled={!pw || loading}>
+              {loading && (
+                <svg width="16" height="16" viewBox="0 0 24 24" className="sp">
+                  <g fill="none" stroke="currentColor" strokeWidth="2">
+                    <circle cx="12" cy="12" r="9.5" strokeOpacity=".3" />
+                    <path d="M12 2.5a9.5 9.5 0 0 1 0 19z" />
+                  </g>
+                </svg>
+              )}
+              Masuk
+            </button>
+          </div>
+        </form>
+      </div>
+
+      <style jsx>{`
+        .authScrim {
+          position: fixed; inset: 0; z-index: 9999;
+          background:
+            radial-gradient(1200px 600px at 50% -20%, rgba(34,197,94,.18), transparent 60%),
+            rgba(0,0,0,.55);
+          backdrop-filter: blur(4px);
+          display: grid; place-items: center;
+          padding: 16px;
+        }
+        .card {
+          width: 100%; max-width: 420px;
+          background: #1f2229; color: #e5e7eb;
+          border: 1px solid rgba(255,255,255,.12);
+          border-radius: 16px; padding: 18px;
+          box-shadow: 0 10px 25px rgba(0,0,0,.25);
+          animation: pop .18s ease-out;
+          display: grid; gap: 12px;
+          text-align: center;
+        }
+        @keyframes pop { from { opacity: 0; transform: translateY(8px) scale(.98) } to { opacity: 1; transform: translateY(0) scale(1) } }
+        .iconWrap { display: grid; place-items: center; }
+        .icon {
+          width: 52px; height: 52px; border-radius: 14px;
+          display: grid; place-items: center;
+          background: rgba(34,197,94,.15);
+          color: #86efac; border: 1px solid rgba(34,197,94,.3);
+        }
+        h2 { margin: 0; font-size: 1.1rem; }
+        .sub { margin: 0; color: #cbd5e1; line-height: 1.6; }
+
+        .form { display: grid; gap: 10px; text-align: left; }
+        .label { color: #9ca3af; font-size: .9rem; }
+        .pwBox {
+          display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center;
+          background: rgba(255,255,255,.03);
+          border: 1px solid rgba(255,255,255,.12);
+          border-radius: 10px; padding: 8px;
+        }
+        .pwBox input {
+          background: transparent; border: none; outline: none; color: #e5e7eb;
+          padding: 6px 8px; font-size: 1rem;
+        }
+        .toggle {
+          background: rgba(255,255,255,.06); color: #cbd5e1; border: 1px solid rgba(255,255,255,.12);
+          padding: 6px 10px; border-radius: 8px; cursor: pointer; font-size: .85rem;
+        }
+        .toggle:hover { filter: brightness(1.05); }
+
+        .err {
+          color: #fecaca; background: rgba(239,68,68,.1);
+          border: 1px solid rgba(239,68,68,.35); border-radius: 10px; padding: 8px 10px; font-size: .9rem;
+        }
+        .actions { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-top: 6px; }
+        .btn {
+          display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+          padding: 10px 12px; border-radius: 10px; font-weight: 600; min-height: 40px;
+          background: rgba(255,255,255,.08); color: #e5e7eb; border: 1px solid rgba(255,255,255,.12);
+          width: 100%;
+        }
+        .btn.ghost { background: rgba(255,255,255,.06); width: auto; }
+        .btn.primary { background: #22c55e; color: #fff; border: none; }
+        .btn[disabled] { opacity: .6; cursor: not-allowed; }
+        .sp { animation: spin .9s linear infinite; }
+        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
+        @media (max-width: 480px) {
+          .actions { flex-direction: column-reverse; }
+          .btn.ghost, .btn.primary { width: 100%; }
+        }
+      `}</style>
     </div>
   );
 }
