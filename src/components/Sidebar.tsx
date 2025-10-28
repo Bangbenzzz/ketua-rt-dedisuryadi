@@ -11,13 +11,15 @@ export default function Sidebar({
   open: boolean;
   onClose: () => void;
 }) {
-  const pathname = usePathname();
+  // Fix: pastikan selalu string (bukan null)
+  const pathname = usePathname() ?? '';
 
   const isActive = useCallback(
     (href: string) => {
+      const p = pathname || '/';
       // Dashboard aktif hanya di / atau /dashboard (tidak aktif di /dashboard/warga)
-      if (href === '/dashboard') return pathname === '/' || pathname === '/dashboard';
-      return pathname.startsWith(href);
+      if (href === '/dashboard') return p === '/' || p === '/dashboard';
+      return p.startsWith(href);
     },
     [pathname]
   );
@@ -33,7 +35,7 @@ export default function Sidebar({
       ),
     },
     {
-      href: '/dashboard/warga', // <-- arahkan ke halaman Data Warga
+      href: '/dashboard/warga',
       label: 'Data Warga',
       icon: (
         <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden fill="none">

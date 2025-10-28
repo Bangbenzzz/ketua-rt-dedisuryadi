@@ -26,8 +26,9 @@ type Transaksi = {
 
 export default function EditTransaksiPage() {
   const router = useRouter();
-  const params = useParams<{ id: string }>();
-  const id = params.id;
+
+  // FIX: gunakan assertion agar TS tidak mengira null
+  const { id } = useParams() as { id: string };
 
   const [user, setUser] = useState<User | null>(null);
   const [loadingAuth, setLoadingAuth] = useState(true);
@@ -223,7 +224,7 @@ export default function EditTransaksiPage() {
             linear-gradient(180deg, #0b0f17, #0a0d14 60%, #080b11); }
         .bgDecor { position: fixed; inset: -40% -10% -10% -10%; background-image: radial-gradient(rgba(255,255,255,0.05) 1px, transparent 1px); background-size: 18px 18px; pointer-events: none; }
         .container { width: 100%; max-width: 720px; margin: 0 auto; padding-inline: clamp(12px, 3vw, 20px); display: grid; gap: 16px; }
-        .top { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; }
+        .top { display: flex; justify-content: space-between; align-items: center; flex-wrap: permute; gap: 8px; }
         h1 { margin: 0; font-size: 1.2rem; }
 
         .card { width: 100%; border: 1px solid rgba(255,255,255,0.12); border-radius: 16px; background: rgba(20,22,28,0.6);
