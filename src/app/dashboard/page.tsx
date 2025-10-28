@@ -1,4 +1,3 @@
-// src/app/dashboard/page.tsx
 'use client';
 
 import { useEffect, useMemo, useState, useCallback } from 'react';
@@ -6,11 +5,12 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { auth, db } from '@/lib/firebase';
 import { onAuthStateChanged, signOut, User } from 'firebase/auth';
-import { collection, deleteDoc, doc, getDocs, query, where } from 'firebase/firestore';
+import { collection, deleteDoc, doc, getDocs, query, where, orderBy } from 'firebase/firestore';
 import type { FirebaseError } from 'firebase/app';
 import { Spinner, FullscreenSpinner } from '@/components/Spinner';
 import Sidebar from '@/components/Sidebar';
 import DualLineTicker from '@/components/DualLineTicker';
+import { isOperatorUser } from '@/lib/roles';
 
 type Transaksi = {
   id: string;
@@ -45,31 +45,9 @@ function formatShort(n: number) {
   return `${sign}${a}`;
 }
 function formatIDRCompact(n: number) { return `Rp ${formatShort(n)}`; }
-function formatDate(iso: string) {
-  const d = new Date(iso);
-  return d.toLocaleDateString('id-ID', { year: 'numeric', month: 'short', day: 'numeric' });
-}
 function formatDateLong(iso: string) {
   const d = new Date(iso);
   return d.toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' });
-}
-function formatWIBTimestamp() {
-  return new Date().toLocaleString('id-ID', {
-    timeZone: 'Asia/Jakarta',
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: false,
-  });
-}
-function fileTimestampWIB() {
-  const now = new Date();
-  const jkt = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Jakarta' }));
-  const p = (n: number) => String(n).padStart(2, '0');
-  return `${jkt.getFullYear()}${p(jkt.getMonth()+1)}${p(jkt.getDate())}_${p(jkt.getHours())}${p(jkt.getMinutes())}${p(jkt.getSeconds())}`;
 }
 
 // Zona WIB helpers
@@ -78,23 +56,6 @@ function getNowJKT() {
 }
 function monthKeyJKT(d: Date) {
   return d.toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta', year: 'numeric', month: '2-digit' }); // YYYY-MM
-}
-function longDateIDJKT(d: Date) {
-  return d.toLocaleDateString('id-ID', {
-    timeZone: 'Asia/Jakarta',
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-  });
-}
-// Label chip: tanggal-bulan(tiga huruf)-tahun
-function dateDMYChip() {
-  const now = getNowJKT();
-  const day = now.toLocaleString('id-ID', { timeZone: 'Asia/Jakarta', day: 'numeric' });
-  const mon = now.toLocaleString('id-ID', { timeZone: 'Asia/Jakarta', month: 'short' }).replace('.', '');
-  const year = now.toLocaleString('id-ID', { timeZone: 'Asia/Jakarta', year: 'numeric' });
-  return `${day} ${mon} ${year}`;
 }
 
 type RangeKey = 7 | 14 | 30 | 'BULAN';
@@ -122,11 +83,8 @@ export default function DashboardPage() {
   // Export status
   const [exporting, setExporting] = useState<null | 'pdf' | 'excel'>(null);
 
-  // Rentang hari grafik (+ Bulan)
+  // Rentang hari grafik
   const [range, setRange] = useState<RangeKey>(14);
-
-  // Label tanggal berjalan untuk topbar
-  const nowLongLabel = useMemo(() => longDateIDJKT(getNowJKT()), []);
 
   // Auth gate
   useEffect(() => {
@@ -142,9 +100,16 @@ export default function DashboardPage() {
     setLoadingData(true);
     setLoadError(null);
     try {
-      const q = query(collection(db, 'transaksi'), where('uid', '==', u.uid));
-      const snap = await getDocs(q);
+      // Operator melihat semua transaksi; non-operator: milik sendiri.
+      const operator = isOperatorUser(u);
+      const baseRef = collection(db, 'transaksi');
+      const qRef = operator
+        ? query(baseRef, orderBy('tanggal', 'desc')) // operator: semua
+        : query(baseRef, where('uid', '==', u.uid)); // non-operator: miliknya
+
+      const snap = await getDocs(qRef);
       const list: Transaksi[] = snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Transaksi, 'id'>) }));
+      // urutkan terbaru di atas (jaga-jaga)
       list.sort((a, b) => (a.tanggal < b.tanggal ? 1 : -1));
       setData(list);
       setPage(1);
@@ -192,7 +157,7 @@ export default function DashboardPage() {
   // Range numerik untuk komponen chart (DualLineTicker tetap 7|14|30)
   const rangeForChart = (range === 'BULAN' ? 30 : range) as 7 | 14 | 30;
 
-  const totalPages = Math.max(1, Math.ceil(data.length / ITEMS_PER_PAGE));
+  const totalPages = useMemo(() => Math.max(1, Math.ceil(data.length / ITEMS_PER_PAGE)), [data.length]);
   const paged = useMemo(() => {
     const start = (page - 1) * ITEMS_PER_PAGE;
     return data.slice(start, start + ITEMS_PER_PAGE);
@@ -206,22 +171,22 @@ export default function DashboardPage() {
 
       const [{ jsPDF }, autoTableModule] = await Promise.all([import('jspdf'), import('jspdf-autotable')]);
       const autoTable = (autoTableModule as any).default;
-      const doc = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' });
+      const docPDF = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' });
 
       const margin = 40;
-      const pageSize: any = (doc as any).internal.pageSize;
+      const pageSize: any = (docPDF as any).internal.pageSize;
       const pageWidth = (pageSize?.getWidth?.() as number) ?? (pageSize?.width as number) ?? 595;
       const pageHeight = (pageSize?.getHeight?.() as number) ?? (pageSize?.height as number) ?? 842;
 
-      const title = 'Riwayat Transaksi Keuangan Kp. Cikadu RT. 02';
-      const tglExp = `Tanggal ekspor: ${formatWIBTimestamp()} WIB`;
+      const title = 'Riwayat Transaksi';
+      const tglExp = `Tanggal ekspor: ${new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })} WIB`;
 
-      doc.setDrawColor(16, 163, 74);
-      doc.rect(margin, margin, pageWidth - margin * 2, 54);
-      doc.setFont('helvetica', 'bold'); doc.setFontSize(14); doc.setTextColor(16, 163, 74);
-      doc.text(title, pageWidth / 2, margin + 22, { align: 'center' });
-      doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(55, 65, 81);
-      doc.text(tglExp, pageWidth / 2, margin + 40, { align: 'center' });
+      docPDF.setDrawColor(16, 163, 74);
+      docPDF.rect(margin, margin, pageWidth - margin * 2, 54);
+      docPDF.setFont('helvetica', 'bold'); docPDF.setFontSize(14); docPDF.setTextColor(16, 163, 74);
+      docPDF.text(title, pageWidth / 2, margin + 22, { align: 'center' });
+      docPDF.setFont('helvetica', 'normal'); docPDF.setFontSize(10); docPDF.setTextColor(55, 65, 81);
+      docPDF.text(tglExp, pageWidth / 2, margin + 40, { align: 'center' });
 
       const rows = data.map((t, i) => ([
         String(i + 1),
@@ -231,7 +196,7 @@ export default function DashboardPage() {
         `${t.jenis === 'Pemasukan' ? '+' : '-'} ${formatIDR(t.nominal)}`,
       ]));
 
-      autoTable(doc as any, {
+      autoTable(docPDF as any, {
         startY: margin + 70,
         head: [['No', 'Tanggal', 'Jenis', 'Keterangan', 'Nominal']],
         body: rows,
@@ -246,26 +211,26 @@ export default function DashboardPage() {
           4: { cellWidth: 110, halign: 'right' },
         },
         didDrawPage: (ctx: any) => {
-          const totalPages = (doc as any).getNumberOfPages?.() ?? 1;
-          doc.setFontSize(9); doc.setTextColor(150);
-          doc.text(`Halaman ${ctx.pageNumber} / ${totalPages}`, pageWidth - margin, pageHeight - 16, { align: 'right' });
+          const total = (docPDF as any).getNumberOfPages?.() ?? 1;
+          docPDF.setFontSize(9); docPDF.setTextColor(150);
+          docPDF.text(`Halaman ${ctx.pageNumber} / ${total}`, pageWidth - margin, pageHeight - 16, { align: 'right' });
         },
       });
 
-      const finalY = (doc as any).lastAutoTable?.finalY ?? (margin + 70);
+      const finalY = (docPDF as any).lastAutoTable?.finalY ?? (margin + 70);
       const boxY = finalY + 14; const boxH = 36; const boxW = pageWidth - margin * 2;
 
-      doc.setDrawColor(16, 163, 74); doc.setFillColor(220, 252, 231);
-      doc.rect(margin, boxY, boxW, boxH, 'DF');
-      doc.setFont('helvetica', 'bold'); doc.setFontSize(12); doc.setTextColor(13, 148, 136);
-      doc.text('Sisa Saldo', margin + 12, boxY + 22);
+      docPDF.setDrawColor(16, 163, 74); docPDF.setFillColor(220, 252, 231);
+      docPDF.rect(margin, boxY, boxW, boxH, 'DF');
+      docPDF.setFont('helvetica', 'bold'); docPDF.setFontSize(12); docPDF.setTextColor(13, 148, 136);
+      docPDF.text('Sisa Saldo', margin + 12, boxY + 22);
 
       const sisaStr = sisa >= 0 ? formatIDR(sisa) : `- ${formatIDR(Math.abs(sisa))}`;
       const valColor = sisa < 0 ? [239, 68, 68] : [34, 197, 94];
-      doc.setFont('helvetica', 'bold'); doc.setFontSize(13); doc.setTextColor(valColor[0], valColor[1], valColor[2]);
-      doc.text(sisaStr, margin + boxW - 12, boxY + 22, { align: 'right' });
+      docPDF.setFont('helvetica', 'bold'); docPDF.setFontSize(13); docPDF.setTextColor(valColor[0], valColor[1], valColor[2]);
+      docPDF.text(sisaStr, margin + boxW - 12, boxY + 22, { align: 'right' });
 
-      doc.save(`riwayat-transaksi_Kp-Cikadu-RT02_${fileTimestampWIB()}_WIB.pdf`);
+      docPDF.save(`riwayat-transaksi_${Date.now()}.pdf`);
     } catch (e) {
       console.error(e);
       alert('Gagal mengekspor PDF. Coba lagi.');
@@ -308,7 +273,7 @@ export default function DashboardPage() {
       ];
 
       XLSX.utils.book_append_sheet(wb, ws, 'Riwayat');
-      XLSX.writeFile(wb, `riwayat-transaksi_Kp-Cikadu-RT02_${fileTimestampWIB()}_WIB.xlsx`);
+      XLSX.writeFile(wb, `riwayat-transaksi_${Date.now()}.xlsx`);
     } catch (e) {
       console.error(e);
       alert('Gagal mengekspor Excel. Coba lagi.');
@@ -357,7 +322,7 @@ export default function DashboardPage() {
         </button>
         <div className="brand">
           <span className="dot" aria-hidden />
-         Dedi Suryadi
+          Dedi Suryadi
         </div>
         <button className="btn btn--delete" onClick={() => setShowLogoutConfirm(true)}>Keluar</button>
       </header>
@@ -430,10 +395,7 @@ export default function DashboardPage() {
                 aria-label="Export Excel"
                 title="Export Excel"
               >
-                <span className="icon" aria-hidden>
-                  <svg width="14" height="14" viewBox="0 0 24 24"><path fill="currentColor" d="M19 2H8a2 2 0 0 0-2 2v3H5a2 2 0 0 0-2 2v9.5A3.5 3.5 0 0 0 6.5 22H19a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2m-4.6 14.2l-1.7-2.6l-1.7 2.6H8.2l2.5-3.7L8.4 9h2l1.3 2l1.3-2h2l-2.3 3.5l2.5 3.7zM6.5 20A1.5 1.5 0 0 1 5 18.5V9h1v9a2 2 0 0 0 2 2z"/></svg>
-                </span>
-                {exporting === 'excel' ? 'Mengekspor…' : 'Excel'}
+                Excel
               </button>
               <button
                 className="btn btn--mini btn--pdf"
@@ -442,10 +404,7 @@ export default function DashboardPage() {
                 aria-label="Export PDF"
                 title="Export PDF"
               >
-                <span className="icon" aria-hidden>
-                  <svg width="14" height="14" viewBox="0 0 24 24"><path fill="currentColor" d="M14 2H6a2 2 0 0 0-2 2v14.5A3.5 3.5 0 0 0 7.5 22H18a2 2 0 0 0 2-2V8zm-1 7V3.5L18.5 9zM9 13H7v5H5v-7h4zm2-2h3a2 2 0 0 1 2 2v1a2 2 0 0 1-2 2h-1v2h-2zm2 3h1a1 1 0 0 0 1-1v-1a1 1 0 0 0-1-1h-1z"/></svg>
-                </span>
-                {exporting === 'pdf' ? 'Mengekspor…' : 'PDF'}
+                PDF
               </button>
             </div>
           </div>
@@ -476,7 +435,7 @@ export default function DashboardPage() {
                   <tbody>
                     {paged.map((t) => (
                       <tr key={t.id}>
-                        <td>{formatDate(t.tanggal)}</td>
+                        <td>{new Date(t.tanggal).toLocaleDateString('id-ID', { year: 'numeric', month: 'short', day: 'numeric' })}</td>
                         <td><span className={`pill ${t.jenis === 'Pemasukan' ? 'pillGreen' : 'pillRed'}`}>{t.jenis}</span></td>
                         <td className="truncate">{t.keterangan}</td>
                         <td className={t.jenis === 'Pemasukan' ? 'green' : 'red'}>
@@ -497,7 +456,7 @@ export default function DashboardPage() {
               <div className="listMobile">
                 {paged.map((t) => (
                   <div key={t.id} className="mItem">
-                    <div className="mRow"><span className="mLabel">Tanggal</span><span className="mVal">{formatDate(t.tanggal)}</span></div>
+                    <div className="mRow"><span className="mLabel">Tanggal</span><span className="mVal">{new Date(t.tanggal).toLocaleDateString('id-ID', { year: 'numeric', month: 'short', day: 'numeric' })}</span></div>
                     <div className="mRow"><span className="mLabel">Jenis</span><span className={`mVal pill ${t.jenis === 'Pemasukan' ? 'pillGreen' : 'pillRed'}`}>{t.jenis}</span></div>
                     <div className="mRow"><span className="mLabel">Keterangan</span><span className="mVal">{t.keterangan || '-'}</span></div>
                     <div className="mRow"><span className="mLabel">Nominal</span><span className={`mVal ${t.jenis === 'Pemasukan' ? 'green' : 'red'}`}>{t.jenis === 'Pemasukan' ? '+' : '-'} {formatIDR(t.nominal)}</span></div>
@@ -582,7 +541,6 @@ export default function DashboardPage() {
           color: #e5e7eb;
           padding: clamp(8px, 3vw, 24px);
           overflow-x: hidden;
-          /* Tambahan agar konten tidak tertutup header fixed */
           padding-top: calc(clamp(8px, 3vw, 24px) + 64px);
           background:
             radial-gradient(1200px circle at 10% -10%, rgba(99,102,241,0.15), transparent 40%),
@@ -599,53 +557,38 @@ export default function DashboardPage() {
           background-size: 18px 18px; pointer-events: none;
         }
 
-        /* Header tetap fixed (freeze di atas) */
-.topbar {
-  width: min(100% - clamp(16px, 6vw, 48px), 1040px);
-  position: fixed;
-  top: 0;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 40; /* tetap di atas konten, di bawah modal */
-
-  padding: clamp(6px, 1.8vw, 10px) clamp(8px, 2vw, 12px);
-  display: flex; align-items: center; justify-content: space-between; gap: clamp(6px, 2vw, 8px);
-  flex-wrap: wrap; border: 1px solid rgba(255,255,255,0.12); border-radius: 14px;
-  background: rgba(20,22,28,0.6);
-  backdrop-filter: blur(10px);
-}
-
-/* Tambahan: di layar lebar, geser header ke area konten (kanan dari sidebar),
-    jadi tidak ketiban sidebar yang fixed di kiri */
-@media (min-width: 900px) {
-  .topbar {
-    left: calc(var(--sbw) + clamp(8px, 3vw, 24px)); /* start setelah sidebar + padding halaman */
-    right: clamp(8px, 3vw, 24px);                 /* beri jarak kanan */
-    transform: none;                                /* tidak perlu center transform */
-    width: auto;                                    /* isi area konten */
-    max-width: none;                                /* biar fleksibel mengikuti area konten */
-  }
-}
+        .topbar {
+          width: min(100% - clamp(16px, 6vw, 48px), 1040px);
+          position: fixed;
+          top: 0;
+          left: 50%;
+          transform: translateX(-50%);
+          z-index: 40;
+          padding: clamp(6px, 1.8vw, 10px) clamp(8px, 2vw, 12px);
+          display: flex; align-items: center; justify-content: space-between; gap: clamp(6px, 2vw, 8px);
+          flex-wrap: wrap; border: 1px solid rgba(255,255,255,0.12); border-radius: 14px;
+          background: rgba(20,22,28,0.6);
+          backdrop-filter: blur(10px);
         }
+        @media (min-width: 900px) {
+          .topbar {
+            left: calc(var(--sbw) + clamp(8px, 3vw, 24px));
+            right: clamp(8px, 3vw, 24px);
+            transform: none;
+            width: auto;
+            max-width: none;
+          }
+        }
+
         .brand { font-weight: 600; letter-spacing: .2px; display: inline-flex; align-items: center; gap: 8px; font-size: clamp(.9rem, 2.6vw, 1rem); flex: 1; }
-        .dot { width: 8px; height: 8px; border-radius: 999px; display: inline-block; background: #22c55e;
-          margin-right: 8px; /* <-- INI YANG SAYA TAMBAHKAN UNTUK JARAK */
-          animation: dotCycle 2.4s steps(1, end) infinite; }
+        .dot { width: 8px; height: 8px; border-radius: 999px; display: inline-block; background: #22c55e; margin-right: 8px; animation: dotCycle 2.4s steps(1, end) infinite; }
         @keyframes dotCycle {
-          0% { background: #22c55e; }
-          20% { background: #ef4444; }
-          40% { background: #f59e0b; }
-          60% { background: #3b82f6; }
-          80% { background: #f59e0b; }
-          100% { background: #22c55e; }
+          0% { background: #22c55e; } 20% { background: #ef4444; } 40% { background: #f59e0b; } 60% { background: #3b82f6; } 80% { background: #f59e0b; } 100% { background: #22c55e; }
         }
-        @media (prefers-reduced-motion: reduce) {
-          .dot { animation: none; }
-        }
-        .dateNow { margin-left: 10px; padding-left: 10px; border-left: 1px solid rgba(255,255,255,0.12);
-          color: #cbd5e1; font-weight: 500; font-size: clamp(.72rem, 2.2vw, .9rem); white-space: nowrap; }
+        @media (prefers-reduced-motion: reduce) { .dot { animation: none; } }
 
-        .hamburger { display: inline-flex; } @media (min-width: 900px) { .hamburger { display: none; } }
+        .hamburger { display: inline-flex; }
+        @media (min-width: 900px) { .hamburger { display: none; } }
 
         .container { width: 100%; max-width: 1040px; margin: 0 auto; padding-inline: clamp(8px, 3vw, 20px); display: grid; gap: clamp(10px, 2.2vw, 16px); }
 
@@ -654,15 +597,13 @@ export default function DashboardPage() {
           box-shadow: 0 20px 60px rgba(0,0,0,0.45); backdrop-filter: blur(14px); padding: clamp(10px, 2vw, 16px); }
         .cardTitle { color: #cbd5e1; font-size: clamp(.85rem, 2.2vw, .95rem); }
 
-        .amount { display: block; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-          font-size: clamp(.95rem, 3.2vw, 1.4rem); font-weight: 700; letter-spacing: .3px; }
+        .amount { display: block; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: clamp(.95rem, 3.2vw, 1.4rem); font-weight: 700; letter-spacing: .3px; }
         .green { color: #86efac; } .red { color: #fca5a5; }
 
         .chartCard { display: grid; }
         .chartHead { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; gap: 10px; }
         .rangeChips { display: inline-flex; gap: 6px; }
-        .chip { padding: 4px 10px; border-radius: 999px; font-size: 12px; color: #cbd5e1;
-          border: 1px solid rgba(255,255,255,0.14); background: rgba(255,255,255,0.05); transition: .15s; }
+        .chip { padding: 4px 10px; border-radius: 999px; font-size: 12px; color: #cbd5e1; border: 1px solid rgba(255,255,255,0.14); background: rgba(255,255,255,0.05); transition: .15s; }
         .chip:hover { background: rgba(255,255,255,0.08); }
         .chip.active { color: #eafff3; border-color: rgba(34,197,94,0.45); background: linear-gradient(135deg, rgba(34,197,94,0.18), rgba(16,185,129,0.12)); }
 
@@ -727,11 +668,11 @@ export default function DashboardPage() {
         .btn--ghost:hover { background: rgba(255,255,255,0.1); }
         .btn--edit { border-color: rgba(59,130,246,0.5); background: rgba(59,130,246,0.12); color: #bfdbfe; }
         .btn--edit:hover { background: rgba(59,130,246,0.2); }
-        
+
         .btn--mini { padding: 6px 10px; font-size: 13px; border-radius: 8px; }
-        .btn--excel { border-color: rgba(34,197,94,0.5); background: rgba(34,197,94,0.12); color: #bbf7d0; display: inline-flex; align-items: center; gap: 6px; }
+        .btn--excel { border-color: rgba(34,197,94,0.5); background: rgba(34,197,94,0.12); color: #bbf7d0; }
         .btn--excel:hover { background: rgba(34,197,94,0.2); }
-        .btn--pdf { border-color: rgba(245,158,11,0.5); background: rgba(245,158,11,0.12); color: #fde68a; display: inline-flex; align-items: center; gap: 6px; }
+        .btn--pdf { border-color: rgba(245,158,11,0.5); background: rgba(245,158,11,0.12); color: #fde68a; }
         .btn--pdf:hover { background: rgba(245,158,11,0.2); }
 
         .errorBox {
@@ -740,7 +681,6 @@ export default function DashboardPage() {
           display: flex; align-items: center; justify-content: space-between; gap: 10px;
         }
 
-        /* Modal */
         .modalBackdrop {
           position: fixed; inset: 0; z-index: 50;
           background: rgba(0,0,0,0.6); backdrop-filter: blur(5px);

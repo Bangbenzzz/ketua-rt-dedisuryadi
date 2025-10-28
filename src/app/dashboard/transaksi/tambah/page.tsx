@@ -2,32 +2,42 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import Link from 'next/link';
 import { auth, db } from '@/lib/firebase';
 import { onAuthStateChanged, User } from 'firebase/auth';
-import { addDoc, collection } from 'firebase/firestore';
-import { FullscreenSpinner } from '@/components/Spinner';
+import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
+import Link from 'next/link';
 import JenisToggle from '@/components/JenisToggle';
+import { FullscreenSpinner } from '@/components/Spinner';
+import { isOperatorUser } from '@/lib/roles';
 
 export default function TambahTransaksiPage() {
   const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
   const [loadingAuth, setLoadingAuth] = useState(true);
-  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (u) => {
       if (!u) router.replace('/login');
-      setUser(u);
+      else setUser(u);
       setLoadingAuth(false);
     });
     return () => unsub();
   }, [router]);
 
+  // Batasi UI tambah untuk operator (rules juga sudah batasi)
+  useEffect(() => {
+    if (!loadingAuth && user && !isOperatorUser(user)) {
+      alert('Hanya operator yang bisa menambah transaksi.');
+      router.replace('/dashboard');
+    }
+  }, [user, loadingAuth, router]);
+
+  if (loadingAuth) return <FullscreenSpinner />;
+
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!user) return;
-    setLoading(true);
 
     const fd = new FormData(e.currentTarget);
     const jenis = (fd.get('jenis') as 'Pemasukan' | 'Pengeluaran') || 'Pemasukan';
@@ -37,25 +47,32 @@ export default function TambahTransaksiPage() {
     const tanggal = tgl ? new Date(`${tgl}T00:00:00`).toISOString() : new Date().toISOString();
 
     try {
+      setSaving(true);
       await addDoc(collection(db, 'transaksi'), {
         uid: user.uid,
-        jenis, nominal, keterangan, tanggal,
-        createdAt: new Date().toISOString(),
+        jenis,
+        nominal,
+        keterangan,
+        tanggal,
+        createdAt: serverTimestamp(),
       });
-      router.push('/dashboard');
+      router.replace('/dashboard');
     } catch (e) {
       console.error(e);
-      alert('Gagal menambah transaksi.');
+      alert('Gagal menambah transaksi. Cek akses operator & rules.');
     } finally {
-      setLoading(false);
+      setSaving(false);
     }
   };
 
-  if (loadingAuth) return <FullscreenSpinner />;
+  const defaultDate = new Date();
+  const yyyy = defaultDate.getFullYear();
+  const mm = String(defaultDate.getMonth() + 1).padStart(2, '0');
+  const dd = String(defaultDate.getDate()).padStart(2, '0');
+  const inputDate = `${yyyy}-${mm}-${dd}`;
 
   return (
     <main className="page">
-      <div className="bgDecor" aria-hidden />
       <section className="container">
         <div className="top">
           <h1>Tambah Transaksi</h1>
@@ -70,44 +87,42 @@ export default function TambahTransaksiPage() {
 
           <div className="field">
             <label>Tanggal</label>
-            <input type="date" name="tanggal" required />
+            <input type="date" name="tanggal" defaultValue={inputDate} required />
           </div>
 
           <div className="field">
             <label>Nominal</label>
-            <input type="number" name="nominal" placeholder="0" min="0" step="1000" required />
+            <input type="number" name="nominal" min="0" step="1000" required placeholder="0" />
           </div>
 
           <div className="field">
             <label>Keterangan</label>
-            <textarea name="keterangan" placeholder="Contoh: Iuran bulan Januari" rows={3} />
+            <textarea name="keterangan" rows={3} placeholder="Opsional" />
           </div>
 
           <div className="actions">
-            <button type="submit" className="btn btn--add" disabled={loading}>
-              {loading ? 'Menyimpan…' : 'Simpan'}
+            <button type="submit" className="btn btn--add" disabled={saving}>
+              {saving ? 'Menyimpan…' : 'Simpan'}
             </button>
           </div>
         </form>
       </section>
 
       <style jsx>{`
-        .page { min-height: 100svh; color: #e5e7eb; padding: clamp(16px, 3vw, 24px); overflow-x: hidden;
-          background:
-            radial-gradient(1200px circle at 10% -10%, rgba(99,102,241,0.15), transparent 40%),
-            radial-gradient(900px circle at 90% 110%, rgba(236,72,153,0.12), transparent 40%),
-            linear-gradient(180deg, #0b0f17, #0a0d14 60%, #080b11); }
-        .bgDecor { position: fixed; inset: -40% -10% -10% -10%; background-image: radial-gradient(rgba(255,255,255,0.05) 1px, transparent 1px); background-size: 18px 18px; pointer-events: none; }
-        .container { width: 100%; max-width: 720px; margin: 0 auto; padding-inline: clamp(12px, 3vw, 20px); display: grid; gap: 16px; }
-        .top { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; }
-        h1 { margin: 0; font-size: 1.2rem; }
-        .card { width: 100%; border: 1px solid rgba(255,255,255,0.12); border-radius: 16px; background: rgba(20,22,28,0.6);
-          box-shadow: 0 20px 60px rgba(0,0,0,0.45); backdrop-filter: blur(14px); padding: 16px; }
-        .form { display: grid; gap: 14px; }
-        .field label { display: block; margin-bottom: 8px; color: #cbd5e1; font-size: .95rem; }
-        .field input, .field textarea { width: 100%; border-radius: 12px; padding: 10px 12px; color: #f3f4f6;
-          background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.1); }
-        .actions { display: flex; justify-content: flex-end; margin-top: 6px; }
+        .page { min-height: 100svh; color: #e5e7eb; padding: 16px; }
+        .container { max-width: 720px; margin: 0 auto; display: grid; gap: 12px; }
+        .top { display: flex; justify-content: space-between; align-items: center; }
+        .card { border: 1px solid rgba(255,255,255,0.12); border-radius: 16px; padding: 12px; }
+        .form { display: grid; gap: 12px; }
+        .field { display: grid; gap: 6px; }
+        input, textarea {
+          background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.12);
+          color: #e5e7eb; border-radius: 10px; padding: 10px;
+        }
+        .actions { display: flex; justify-content: flex-end; gap: 8px; }
+        .btn { padding: 10px 12px; border-radius: 10px; }
+        .btn--add { background: #10b981; color: #fff; border: none; }
+        .btn--ghost { background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); color: #e5e7eb; }
       `}</style>
     </main>
   );
