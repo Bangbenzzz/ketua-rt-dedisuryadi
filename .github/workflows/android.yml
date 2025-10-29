@@ -32,10 +32,13 @@ jobs:
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
-	
-	 # === TAMBAHKAN LANGKAH BARU DI SINI ===
-          - name: Create Web Directory for Capacitor
-            run: mkdir -p out
+
+      # ================== INI PERBAIKAN UTAMANYA ==================
+      - name: Create Required Directories for Capacitor Sync
+        run: |
+          mkdir -p out
+          mkdir -p android/app/src/main/assets
+      # ============================================================
 
       - name: Sync Android Project
         run: npx cap sync android
