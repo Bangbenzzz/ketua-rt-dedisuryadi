@@ -25,7 +25,6 @@ export default function TambahTransaksiPage() {
     return () => unsub();
   }, [router]);
 
-  // Batasi UI tambah untuk operator (rules juga sudah batasi)
   useEffect(() => {
     if (!loadingAuth && user && !isOperatorUser(user)) {
       alert('Hanya operator yang bisa menambah transaksi.');
@@ -37,7 +36,7 @@ export default function TambahTransaksiPage() {
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (!user) return;
+    if (!user || saving) return;
 
     const fd = new FormData(e.currentTarget);
     const jenis = (fd.get('jenis') as 'Pemasukan' | 'Pengeluaran') || 'Pemasukan';
@@ -49,14 +48,9 @@ export default function TambahTransaksiPage() {
     try {
       setSaving(true);
       await addDoc(collection(db, 'transaksi'), {
-        uid: user.uid,
-        jenis,
-        nominal,
-        keterangan,
-        tanggal,
-        createdAt: serverTimestamp(),
+        uid: user.uid, jenis, nominal, keterangan, tanggal, createdAt: serverTimestamp(),
       });
-      router.replace('/dashboard');
+      router.replace('/dashboard?notice=trx_add_ok');
     } catch (e) {
       console.error(e);
       alert('Gagal menambah transaksi. Cek akses operator & rules.');
@@ -65,48 +59,27 @@ export default function TambahTransaksiPage() {
     }
   };
 
-  const defaultDate = new Date();
-  const yyyy = defaultDate.getFullYear();
-  const mm = String(defaultDate.getMonth() + 1).padStart(2, '0');
-  const dd = String(defaultDate.getDate()).padStart(2, '0');
-  const inputDate = `${yyyy}-${mm}-${dd}`;
+  const d = new Date();
+  const inputDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
   return (
-    <main className="page">
+    <main className="page" aria-busy={saving}>
       <section className="container">
         <div className="top">
-          <h1>Tambah Transaksi</h1>
+          <h3>Tambah Transaksi</h3>
           <Link href="/dashboard" className="btn btn--ghost">Kembali</Link>
         </div>
 
-        <form onSubmit={handleSubmit} className="card form">
-          <div className="field">
-            <label>Jenis Transaksi</label>
-            <JenisToggle name="jenis" defaultValue="Pemasukan" required />
-          </div>
-
-          <div className="field">
-            <label>Tanggal</label>
-            <input type="date" name="tanggal" defaultValue={inputDate} required />
-          </div>
-
-          <div className="field">
-            <label>Nominal</label>
-            <input type="number" name="nominal" min="0" step="1000" required placeholder="0" />
-          </div>
-
-          <div className="field">
-            <label>Keterangan</label>
-            <textarea name="keterangan" rows={3} placeholder="Opsional" />
-          </div>
-
-          <div className="actions">
-            <button type="submit" className="btn btn--add" disabled={saving}>
-              {saving ? 'Menyimpan…' : 'Simpan'}
-            </button>
-          </div>
+        <form onSubmit={handleSubmit} className={`card form ${saving ? 'isSaving' : ''}`}>
+          <div className="field"><label>Jenis Transaksi</label><JenisToggle name="jenis" defaultValue="Pemasukan" required /></div>
+          <div className="field"><label>Tanggal</label><input type="date" name="tanggal" defaultValue={inputDate} required disabled={saving} /></div>
+          <div className="field"><label>Nominal</label><input type="number" name="nominal" min="0" step="1000" required placeholder="0" disabled={saving} /></div>
+          <div className="field"><label>Keterangan</label><textarea name="keterangan" rows={3} placeholder="Opsional" disabled={saving} /></div>
+          <div className="actions"><button type="submit" className="btn btn--add" disabled={saving}>{saving ? 'Menyimpan…' : 'Simpan'}</button></div>
         </form>
       </section>
+
+      {saving && <FullscreenSpinner />}
 
       <style jsx>{`
         .page { min-height: 100svh; color: #e5e7eb; padding: 16px; }
@@ -114,11 +87,9 @@ export default function TambahTransaksiPage() {
         .top { display: flex; justify-content: space-between; align-items: center; }
         .card { border: 1px solid rgba(255,255,255,0.12); border-radius: 16px; padding: 12px; }
         .form { display: grid; gap: 12px; }
+        .form.isSaving { pointer-events: none; opacity: .97; }
         .field { display: grid; gap: 6px; }
-        input, textarea {
-          background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.12);
-          color: #e5e7eb; border-radius: 10px; padding: 10px;
-        }
+        input, textarea { background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.12); color: #e5e7eb; border-radius: 10px; padding: 10px; }
         .actions { display: flex; justify-content: flex-end; gap: 8px; }
         .btn { padding: 10px 12px; border-radius: 10px; }
         .btn--add { background: #10b981; color: #fff; border: none; }

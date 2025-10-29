@@ -1,6 +1,8 @@
 'use client';
 
+// DIUBAH: Tambahkan createPortal dari react-dom
 import React, { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { db, auth } from '../../../lib/firebase';
 import {
   collection, onSnapshot, addDoc, setDoc, doc, deleteDoc, serverTimestamp,
@@ -109,6 +111,12 @@ export default function WargaPageClient() {
 
   const [showAddChoiceModal, setShowAddChoiceModal] = useState(false);
   const [addMode, setAddMode] = useState<'family' | 'single'>('family');
+  
+  // DIUBAH: State untuk memastikan komponen sudah ter-mount di client sebelum menggunakan Portal
+  const [isMounted, setIsMounted] = useState(false);
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
 
   const showError = (message: string, title = 'Gagal') => setNotice({ type: 'error', title, message });
   const showSuccess = (message: string, title = 'Berhasil') => setNotice({ type: 'success', title, message });
@@ -576,8 +584,10 @@ export default function WargaPageClient() {
         />
       )}
 
-      {notice && (
-        <NoticeModal notice={notice} onClose={() => setNotice(null)} />
+      {/* DIUBAH: Menggunakan React Portal untuk merender Notifikasi */}
+      {isMounted && notice && createPortal(
+        <NoticeModal notice={notice} onClose={() => setNotice(null)} />,
+        document.body
       )}
 
       {/* Password Gate overlay */}
@@ -790,7 +800,7 @@ function Spinner({ label = 'Loading...' }: { label?: string }) {
 const UserIcon = () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>;
 const UsersIcon = () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>;
 const EyeIcon = () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg>;
-const EditIcon = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>;
+const EditIcon = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 1 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>;
 const TrashIcon = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /><line x1="10" y1="11" x2="10" y2="17" /><line x1="14" y1="11" x2="14" y2="17" /></svg>;
 const LockIcon = () => <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>;
 
@@ -1223,17 +1233,39 @@ function KeluargaFormModal(
     .formGrid { display: grid; grid-template-columns: 1fr; gap: 16px; }
     .group { display: grid; gap: 10px; align-content: start; border-radius: 12px; border: 1px solid rgba(255,255,255,.1); padding: 10px; }
     .group.head {
-      display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 10px; align-items: end;
+      display: grid;
+      grid-template-columns: minmax(0,1fr) minmax(0,1fr) minmax(0,1fr) auto;
+      gap: 10px; align-items: end;
       background: rgba(255,255,255,.02);
     }
     .group h4 { margin: 0; color: #a7f3d0; font-size: .9rem; grid-column: 1 / -1; }
     .full { grid-column: 1 / -1; }
     
-    .field { display: grid; gap: 4px; }
+    .field { display: grid; gap: 4px; min-width: 0; }
     .field label { color: #9ca3af; font-size: .85rem; }
     .field input, .field select {
       background: rgba(255,255,255,.04); color: #e5e7eb; border: 1px solid rgba(255,255,255,.12);
-      padding: 8px 10px; border-radius: 8px;
+      padding: 8px 10px; border-radius: 8px; width: 100%;
+    }
+
+    /* Responsif: kelompok baris (seperti tabel) turun ke 2 kolom lalu 1 kolom */
+    @media (max-width: 900px) {
+      .group.head {
+        grid-template-columns: minmax(0,1fr) minmax(0,1fr);
+      }
+      .group.head .btn.danger.sm {
+        grid-column: 2 / 3;
+        justify-self: end;
+      }
+    }
+    @media (max-width: 560px) {
+      .group.head {
+        grid-template-columns: minmax(0,1fr);
+      }
+      .group.head .btn.danger.sm {
+        grid-column: 1 / -1;
+        justify-self: end;
+      }
     }
 
     .modalFoot {
@@ -1317,7 +1349,7 @@ function ConfirmModal(
   );
 }
 
-/* Modal Notifikasi */
+/* Modal Notifikasi (Toast) - z-index tetap tinggi untuk jaga-jaga */
 function NoticeModal({ notice, onClose }: { notice: Notice; onClose: () => void; }) {
   const colors = {
     success: '#22c55e', error: '#ef4444', info: '#3b82f6', warning: '#f59e0b',
@@ -1334,7 +1366,28 @@ function NoticeModal({ notice, onClose }: { notice: Notice; onClose: () => void;
       <strong className="noticeTitle" style={{ color }}>{notice.title ?? 'Notifikasi'}</strong>
       <p className="noticeMsg">{notice.message}</p>
       <button className="closeBtn" onClick={onClose}>×</button>
-      <style jsx>{` .notice { position: fixed; top: 16px; right: 16px; z-index: 99; background: #1f2229; color: #e5e7eb; border: 1px solid rgba(255,255,255,.12); border-left-width: 4px; border-radius: 8px; padding: 12px 16px; width: 90%; max-width: 340px; box-shadow: 0 4px 12px rgba(0,0,0,.2); animation: slideIn .2s ease-out; } @keyframes slideIn { from { opacity: 0; transform: translateX(20px); } to { opacity: 1; transform: translateX(0); } } .noticeTitle { display: block; margin-bottom: 4px; font-size: 1rem; } .noticeMsg { margin: 0; font-size: .9rem; } .closeBtn { position: absolute; top: 4px; right: 4px; background: transparent; border: none; color: #9ca3af; font-size: 1.4rem; line-height: 1; width: 28px; height: 28px; cursor: pointer; } `}</style>
+      <style jsx>{`
+        .notice {
+          position: fixed;
+          top: calc(16px + env(safe-area-inset-top));
+          right: 16px;
+          z-index: 10001; /* Nilai z-index tinggi untuk memastikan di atas elemen lain di root */
+          background: #1f2229; color: #e5e7eb;
+          border: 1px solid rgba(255,255,255,.12); border-left-width: 4px;
+          border-radius: 8px; padding: 12px 16px;
+          width: 90%; max-width: 340px;
+          box-shadow: 0 4px 12px rgba(0,0,0,.2);
+          animation: slideIn .2s ease-out;
+        }
+        @keyframes slideIn { from { opacity: 0; transform: translateX(20px); } to { opacity: 1; transform: translateX(0); } }
+        .noticeTitle { display: block; margin-bottom: 4px; font-size: 1rem; }
+        .noticeMsg { margin: 0; font-size: .9rem; }
+        .closeBtn {
+          position: absolute; top: 4px; right: 4px;
+          background: transparent; border: none; color: #9ca3af;
+          font-size: 1.4rem; line-height: 1; width: 28px; height: 28px; cursor: pointer;
+        }
+      `}</style>
     </div>
   );
 }

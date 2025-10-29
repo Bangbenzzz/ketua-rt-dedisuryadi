@@ -30,6 +30,8 @@ export default function EditTransaksiPage() {
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
+  const busy = saving || deleting; // status sibuk: bekukan UI + tampilkan spinner
+
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (u) => {
       if (!u) router.replace('/login');
@@ -42,7 +44,6 @@ export default function EditTransaksiPage() {
   useEffect(() => {
     (async () => {
       if (!user || !id) return;
-      // Batasi UI edit untuk operator (rules juga sudah batasi)
       if (!isOperatorUser(user)) {
         alert('Hanya operator yang bisa mengedit transaksi.');
         router.replace('/dashboard');
@@ -67,7 +68,7 @@ export default function EditTransaksiPage() {
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (!id || !data) return;
+    if (!id || !data || busy) return;
     setSaving(true);
 
     const fd = new FormData(e.currentTarget);
@@ -89,7 +90,8 @@ export default function EditTransaksiPage() {
   };
 
   const handleDelete = async () => {
-    if (!id || !confirm('Yakin ingin menghapus transaksi ini?')) return;
+    if (!id || busy) return;
+    if (!confirm('Yakin ingin menghapus transaksi ini?')) return;
     try {
       setDeleting(true);
       await deleteDoc(doc(db, 'transaksi', id));
@@ -112,44 +114,51 @@ export default function EditTransaksiPage() {
   const inputDate = `${yyyy}-${mm}-${dd}`;
 
   return (
-    <main className="page">
+    <main className="page" aria-busy={busy}>
       <section className="container">
         <div className="top">
           <h1>Edit Transaksi</h1>
           <Link href="/dashboard" className="btn btn--ghost">Kembali</Link>
         </div>
 
-        <form onSubmit={handleSubmit} className="card form">
-          <div className="field">
-            <label>Jenis Transaksi</label>
-            <JenisToggle name="jenis" defaultValue={data.jenis} required />
-          </div>
+        <form onSubmit={handleSubmit} className={`card form ${busy ? 'isBusy' : ''}`} aria-busy={busy}>
+          {/* Fieldset disabled akan menonaktifkan semua kontrol di dalamnya saat busy */}
+          <fieldset disabled={busy} className="fs">
+            <div className="field">
+              <label>Jenis Transaksi</label>
+              {/* Jika JenisToggle mendukung prop disabled, fieldset sudah cukup; jika tidak, tambahkan disabled prop di komponen itu */}
+              <JenisToggle name="jenis" defaultValue={data.jenis} required />
+            </div>
 
-          <div className="field">
-            <label>Tanggal</label>
-            <input type="date" name="tanggal" defaultValue={inputDate} required />
-          </div>
+            <div className="field">
+              <label>Tanggal</label>
+              <input type="date" name="tanggal" defaultValue={inputDate} required />
+            </div>
 
-          <div className="field">
-            <label>Nominal</label>
-            <input type="number" name="nominal" defaultValue={data.nominal} min="0" step="1000" required />
-          </div>
+            <div className="field">
+              <label>Nominal</label>
+              <input type="number" name="nominal" defaultValue={data.nominal} min="0" step="1000" required />
+            </div>
 
-          <div className="field">
-            <label>Keterangan</label>
-            <textarea name="keterangan" defaultValue={data.keterangan} rows={3} />
-          </div>
+            <div className="field">
+              <label>Keterangan</label>
+              <textarea name="keterangan" defaultValue={data.keterangan} rows={3} />
+            </div>
 
-          <div className="actions">
-            <button type="submit" className="btn btn--edit" disabled={saving}>
-              {saving ? 'Menyimpan…' : 'Simpan Perubahan'}
-            </button>
-            <button type="button" className="btn btn--delete" onClick={handleDelete} disabled={deleting}>
-              {deleting ? 'Menghapus…' : 'Hapus'}
-            </button>
-          </div>
+            <div className="actions">
+              <button type="submit" className="btn btn--edit" disabled={busy}>
+                {saving ? 'Menyimpan…' : 'Simpan Perubahan'}
+              </button>
+              <button type="button" className="btn btn--delete" onClick={handleDelete} disabled={busy}>
+                {deleting ? 'Menghapus…' : 'Hapus'}
+              </button>
+            </div>
+          </fieldset>
         </form>
       </section>
+
+      {/* Overlay spinner ketika saving/hapus agar layar “beku” */}
+      {busy && <FullscreenSpinner />}
 
       <style jsx>{`
         .page { min-height: 100svh; color: #e5e7eb; padding: 16px; }
@@ -157,6 +166,8 @@ export default function EditTransaksiPage() {
         .top { display: flex; justify-content: space-between; align-items: center; }
         .card { border: 1px solid rgba(255,255,255,0.12); border-radius: 16px; padding: 12px; }
         .form { display: grid; gap: 12px; }
+        .form.isBusy { opacity: .98; } /* opsional efek redup */
+        .fs { border: 0; padding: 0; margin: 0; }
         .field { display: grid; gap: 6px; }
         input, textarea {
           background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.12);

@@ -4,11 +4,10 @@ import { useEffect, useMemo, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { auth, db } from '@/lib/firebase';
-import { onAuthStateChanged, signOut, User } from 'firebase/auth';
+import { onAuthStateChanged, User } from 'firebase/auth';
 import { collection, deleteDoc, doc, getDocs, query, where, orderBy } from 'firebase/firestore';
 import type { FirebaseError } from 'firebase/app';
 import { Spinner, FullscreenSpinner } from '@/components/Spinner';
-import Sidebar from '@/components/Sidebar';
 import DualLineTicker from '@/components/DualLineTicker';
 import { isOperatorUser } from '@/lib/roles';
 
@@ -24,11 +23,9 @@ type Transaksi = {
 
 const ITEMS_PER_PAGE = 10;
 
-// Format Rupiah penuh (tooltip/export)
 function formatIDR(n: number) {
   return n.toLocaleString('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 });
 }
-// Format pendek (rb, jt, M, T, P, E)
 function formatShort(n: number) {
   const a = Math.abs(n);
   const sign = n < 0 ? '-' : '';
@@ -62,7 +59,6 @@ type RangeKey = 7 | 14 | 30 | 'BULAN';
 
 export default function DashboardPage() {
   const router = useRouter();
-  const [sbOpen, setSbOpen] = useState(false);
 
   const [user, setUser] = useState<User | null>(null);
   const [loadingAuth, setLoadingAuth] = useState(true);
@@ -71,10 +67,6 @@ export default function DashboardPage() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [data, setData] = useState<Transaksi[]>([]);
   const [page, setPage] = useState(1);
-
-  // Modal logout
-  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
-  const [loggingOut, setLoggingOut] = useState(false);
 
   // Modal hapus
   const [deleteId, setDeleteId] = useState<string | null>(null);
@@ -86,7 +78,7 @@ export default function DashboardPage() {
   // Rentang hari grafik
   const [range, setRange] = useState<RangeKey>(14);
 
-  // Auth gate
+  // Auth gate (tetap sama)
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (u) => {
       if (!u) router.replace('/login');
@@ -100,16 +92,14 @@ export default function DashboardPage() {
     setLoadingData(true);
     setLoadError(null);
     try {
-      // Operator melihat semua transaksi; non-operator: milik sendiri.
       const operator = isOperatorUser(u);
       const baseRef = collection(db, 'transaksi');
       const qRef = operator
-        ? query(baseRef, orderBy('tanggal', 'desc')) // operator: semua
-        : query(baseRef, where('uid', '==', u.uid)); // non-operator: miliknya
+        ? query(baseRef, orderBy('tanggal', 'desc'))
+        : query(baseRef, where('uid', '==', u.uid));
 
       const snap = await getDocs(qRef);
       const list: Transaksi[] = snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Transaksi, 'id'>) }));
-      // urutkan terbaru di atas (jaga-jaga)
       list.sort((a, b) => (a.tanggal < b.tanggal ? 1 : -1));
       setData(list);
       setPage(1);
@@ -133,7 +123,6 @@ export default function DashboardPage() {
     return { pemasukan: masuk, pengeluaran: keluar, sisa: masuk - keluar };
   }, [data]);
 
-  // Ringkasan Bulan Ini
   const { pemasukanBulan, pengeluaranBulan, sisaBulan } = useMemo(() => {
     const nowKey = monthKeyJKT(getNowJKT());
     let masuk = 0, keluar = 0;
@@ -147,14 +136,12 @@ export default function DashboardPage() {
     return { pemasukanBulan: masuk, pengeluaranBulan: keluar, sisaBulan: masuk - keluar };
   }, [data]);
 
-  // Data untuk grafik: jika "BULAN", filter data ke bulan ini
   const chartData = useMemo(() => {
     if (range !== 'BULAN') return data;
     const nowKey = monthKeyJKT(getNowJKT());
     return data.filter((t) => monthKeyJKT(new Date(t.tanggal)) === nowKey);
   }, [data, range]);
 
-  // Range numerik untuk komponen chart (DualLineTicker tetap 7|14|30)
   const rangeForChart = (range === 'BULAN' ? 30 : range) as 7 | 14 | 30;
 
   const totalPages = useMemo(() => Math.max(1, Math.ceil(data.length / ITEMS_PER_PAGE)), [data.length]);
@@ -163,12 +150,10 @@ export default function DashboardPage() {
     return data.slice(start, start + ITEMS_PER_PAGE);
   }, [data, page]);
 
-  // Export PDF
   const handleExportPDF = useCallback(async () => {
     try {
       if (data.length === 0) { alert('Belum ada data untuk diekspor.'); return; }
       setExporting('pdf');
-
       const [{ jsPDF }, autoTableModule] = await Promise.all([import('jspdf'), import('jspdf-autotable')]);
       const autoTable = (autoTableModule as any).default;
       const docPDF = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' });
@@ -181,7 +166,7 @@ export default function DashboardPage() {
       const title = 'Riwayat Transaksi';
       const tglExp = `Tanggal ekspor: ${new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })} WIB`;
 
-      docPDF.setDrawColor(16, 163, 74);
+      (docPDF as any).setDrawColor(16, 163, 74);
       docPDF.rect(margin, margin, pageWidth - margin * 2, 54);
       docPDF.setFont('helvetica', 'bold'); docPDF.setFontSize(14); docPDF.setTextColor(16, 163, 74);
       docPDF.text(title, pageWidth / 2, margin + 22, { align: 'center' });
@@ -239,7 +224,6 @@ export default function DashboardPage() {
     }
   }, [data, sisa]);
 
-  // Export Excel
   const handleExportExcel = useCallback(async () => {
     try {
       if (data.length === 0) { alert('Belum ada data untuk diekspor.'); return; }
@@ -282,10 +266,8 @@ export default function DashboardPage() {
     }
   }, [data, sisa]);
 
-  // Early return SETELAH semua hooks
   if (loadingAuth) return <FullscreenSpinner />;
 
-  // Non-hook handlers
   const openDeleteConfirm = (id: string) => setDeleteId(id);
   const closeDeleteConfirm = () => { if (!deleting) setDeleteId(null); };
   const handleConfirmDelete = async () => {
@@ -302,31 +284,9 @@ export default function DashboardPage() {
       setDeleteId(null);
     }
   };
-  const closeLogoutConfirm = () => { if (!loggingOut) setShowLogoutConfirm(false); };
-  const handleConfirmLogout = async () => {
-    setLoggingOut(true);
-    try { await signOut(auth); router.replace('/login'); }
-    catch (e) { console.error(e); alert('Gagal logout. Coba lagi.'); }
-    finally { setLoggingOut(false); setShowLogoutConfirm(false); }
-  };
 
   return (
-    <main className="page">
-      <Sidebar open={sbOpen} onClose={() => setSbOpen(false)} />
-      <div className="bgDecor" aria-hidden />
-
-      {/* Topbar */}
-      <header className="topbar">
-        <button className="btn btn--icon hamburger" aria-label="Buka menu" onClick={() => setSbOpen(true)}>
-          <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden><path d="M4 6h16M4 12h16M4 18h16" stroke="currentColor" strokeWidth="1.8" /></svg>
-        </button>
-        <div className="brand">
-          <span className="dot" aria-hidden />
-          Dedi Suryadi
-        </div>
-        <button className="btn btn--delete" onClick={() => setShowLogoutConfirm(true)}>Keluar</button>
-      </header>
-
+    <>
       <section className="container">
         {/* Ringkasan */}
         <div className="gridStats">
@@ -420,7 +380,6 @@ export default function DashboardPage() {
             <div className="center" style={{ padding: 14 }}><Spinner /></div>
           ) : (
             <>
-              {/* Desktop */}
               <div className="tableWrap">
                 <table className="table">
                   <thead>
@@ -484,32 +443,7 @@ export default function DashboardPage() {
         </div>
       </section>
 
-      {/* Modal Logout */}
-      {showLogoutConfirm && (
-        <div className="modalBackdrop" onClick={(e) => { if (e.currentTarget === e.target) closeLogoutConfirm(); }}>
-          <div className="modal" role="dialog" aria-modal="true" aria-labelledby="logout-title" aria-describedby="logout-desc">
-            <div className="modalHeader">
-              <div className="warnIcon" aria-hidden>
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-                  <path d="M12 8v5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-                  <circle cx="12" cy="16" r="1" fill="currentColor" />
-                  <path d="M12 3 2.8 19a2 2 0 0 0 1.7 3h15a2 2 0 0 0 1.7-3L12 3z" stroke="currentColor" strokeWidth="1.2" fill="none" />
-                </svg>
-              </div>
-              <h3 id="logout-title" className="modalTitle">Keluar dari akun?</h3>
-            </div>
-            <p id="logout-desc" className="modalDesc">Anda yakin ingin keluar? Anda akan kembali ke halaman login.</p>
-            <div className="modalActions">
-              <button className="btn btn--ghost" onClick={closeLogoutConfirm} disabled={loggingOut}>Batal</button>
-              <button className="btn btn--delete" onClick={handleConfirmLogout} disabled={loggingOut}>
-                {loggingOut ? 'Keluar…' : 'Keluar'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Modal Hapus */}
+      {/* Modal Hapus (tetap seperti semula) */}
       {deleteId && (
         <div className="modalBackdrop" onClick={(e) => { if (e.currentTarget === e.target) closeDeleteConfirm(); }}>
           <div className="modal" role="dialog" aria-modal="true" aria-labelledby="del-title" aria-describedby="del-desc">
@@ -535,61 +469,6 @@ export default function DashboardPage() {
       )}
 
       <style jsx>{`
-        .page {
-          --sbw: 248px;
-          min-height: 100svh;
-          color: #e5e7eb;
-          padding: clamp(8px, 3vw, 24px);
-          overflow-x: hidden;
-          padding-top: calc(clamp(8px, 3vw, 24px) + 64px);
-          background:
-            radial-gradient(1200px circle at 10% -10%, rgba(99,102,241,0.15), transparent 40%),
-            radial-gradient(900px circle at 90% 110%, rgba(236,72,153,0.12), transparent 40%),
-            linear-gradient(180deg, #0b0f17, #0a0d14 60%, #080b11);
-        }
-        @media (min-width: 900px) {
-          .page { padding-left: calc(clamp(8px, 3vw, 24px) + var(--sbw)); }
-        }
-
-        .bgDecor {
-          position: fixed; inset: -40% -10% -10% -10%;
-          background-image: radial-gradient(rgba(255,255,255,0.05) 1px, transparent 1px);
-          background-size: 18px 18px; pointer-events: none;
-        }
-
-        .topbar {
-          width: min(100% - clamp(16px, 6vw, 48px), 1040px);
-          position: fixed;
-          top: 0;
-          left: 50%;
-          transform: translateX(-50%);
-          z-index: 40;
-          padding: clamp(6px, 1.8vw, 10px) clamp(8px, 2vw, 12px);
-          display: flex; align-items: center; justify-content: space-between; gap: clamp(6px, 2vw, 8px);
-          flex-wrap: wrap; border: 1px solid rgba(255,255,255,0.12); border-radius: 14px;
-          background: rgba(20,22,28,0.6);
-          backdrop-filter: blur(10px);
-        }
-        @media (min-width: 900px) {
-          .topbar {
-            left: calc(var(--sbw) + clamp(8px, 3vw, 24px));
-            right: clamp(8px, 3vw, 24px);
-            transform: none;
-            width: auto;
-            max-width: none;
-          }
-        }
-
-        .brand { font-weight: 600; letter-spacing: .2px; display: inline-flex; align-items: center; gap: 8px; font-size: clamp(.9rem, 2.6vw, 1rem); flex: 1; }
-        .dot { width: 8px; height: 8px; border-radius: 999px; display: inline-block; background: #22c55e; margin-right: 8px; animation: dotCycle 2.4s steps(1, end) infinite; }
-        @keyframes dotCycle {
-          0% { background: #22c55e; } 20% { background: #ef4444; } 40% { background: #f59e0b; } 60% { background: #3b82f6; } 80% { background: #f59e0b; } 100% { background: #22c55e; }
-        }
-        @media (prefers-reduced-motion: reduce) { .dot { animation: none; } }
-
-        .hamburger { display: inline-flex; }
-        @media (min-width: 900px) { .hamburger { display: none; } }
-
         .container { width: 100%; max-width: 1040px; margin: 0 auto; padding-inline: clamp(8px, 3vw, 20px); display: grid; gap: clamp(10px, 2.2vw, 16px); }
 
         .gridStats { display: grid; gap: clamp(8px, 2vw, 12px); grid-template-columns: repeat(auto-fit, minmax(min(160px, 100%), 1fr)); }
@@ -659,7 +538,6 @@ export default function DashboardPage() {
         .btn:not(:disabled):hover { background: rgba(255,255,255,0.1); }
         .btn:disabled { opacity: .5; cursor: not-allowed; }
 
-        .btn--icon { padding: 8px; display: grid; place-items: center; }
         .btn--add { background: #10b981; border: none; color: #fff; font-weight: 600; }
         .btn--add:hover { background: #10a370; }
         .btn--delete { background: #ef4444; border: none; color: #fff; font-weight: 600; }
@@ -691,18 +569,16 @@ export default function DashboardPage() {
           width: 100%; max-width: 420px;
           border: 1px solid rgba(255,255,255,0.12); border-radius: 16px;
           background: #0d1017; box-shadow: 0 10px 30px rgba(0,0,0,0.3);
-          padding: 20px;
-          animation: zoomIn .15s ease-out;
+          padding: 20px; animation: zoomIn .15s ease-out;
         }
         .modalHeader { display: flex; align-items: center; gap: 10px; }
         .modalTitle { margin: 0; font-size: 1.1rem; }
         .warnIcon { color: #f59e0b; }
         .modalDesc { margin: 12px 0 0; color: #cbd5e1; font-size: .95rem; }
         .modalActions { margin-top: 20px; display: flex; justify-content: flex-end; gap: 8px; }
-
         @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
         @keyframes zoomIn { from { opacity: 0; transform: scale(.95); } to { opacity: 1; transform: scale(1); } }
       `}</style>
-    </main>
+    </>
   );
 }

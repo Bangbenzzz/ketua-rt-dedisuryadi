@@ -9,14 +9,15 @@ import {
   sendPasswordResetEmail,
   signOut,
 } from 'firebase/auth';
-import { FirebaseError } from 'firebase/app';
+import type { FirebaseError } from 'firebase/app';
 import { auth } from '@/lib/firebase';
+import { FullscreenSpinner } from '@/components/Spinner'; // <-- tambah ini
 import styles from './login.module.css';
 
 export default function LoginPage() {
   const router = useRouter();
   const [showPassword, setShowPassword] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(false); // dipakai untuk spinner overlay
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [infoMsg, setInfoMsg] = useState<string | null>(null);
   const [email, setEmail] = useState('');
@@ -40,7 +41,7 @@ export default function LoginPage() {
     try {
       const cred = await signInWithEmailAndPassword(auth, mail, password);
 
-      // Wajib email terverifikasi (sesuai Firestore Rules)
+      // Wajib email terverifikasi
       if (!cred.user.emailVerified) {
         await sendEmailVerification(cred.user);
         await signOut(auth);
@@ -99,6 +100,8 @@ export default function LoginPage() {
       return;
     }
 
+    // tampilkan spinner juga saat kirim reset password (opsional tapi direkomendasikan)
+    setLoading(true);
     try {
       await sendPasswordResetEmail(auth, mail);
       setInfoMsg('Link reset password dikirim. Cek inbox/spam email kamu.');
@@ -109,11 +112,13 @@ export default function LoginPage() {
       else if (code === 'auth/invalid-email') msg = 'Format email tidak valid.';
       else if (code === 'auth/too-many-requests') msg = 'Terlalu banyak percobaan, coba lagi nanti.';
       setErrorMsg(msg);
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
-    <main className={styles.page}>
+    <main className={styles.page} aria-busy={loading}>
       <div className={styles.bgDecor} aria-hidden />
       <section className={styles.card}>
         <div className={styles.brand}>
@@ -121,8 +126,8 @@ export default function LoginPage() {
             <Image
               src="/logo.svg"
               alt="Logo"
-              width={100}
-              height={100}
+              width={300}
+              height={300}
               priority
               className={styles.logoImg}
               draggable={false}
@@ -168,6 +173,7 @@ export default function LoginPage() {
                 onClick={() => setShowPassword((v) => !v)}
                 aria-label={showPassword ? 'Sembunyikan kata sandi' : 'Tampilkan kata sandi'}
                 title={showPassword ? 'Sembunyikan' : 'Tampilkan'}
+                disabled={loading}
               >
                 {showPassword ? (
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
@@ -196,7 +202,6 @@ export default function LoginPage() {
             {loading ? 'Memproses…' : 'Masuk'}
           </button>
 
-          {/* Ubah jadi warna merah */}
           <button
             type="button"
             className={`${styles.btn} ${styles.danger}`}
@@ -211,6 +216,9 @@ export default function LoginPage() {
 
         <p className={styles.footer}>© {year} Kp. Cikadu RT. 02 All Rights Reserved. Inc</p>
       </section>
+
+      {/* Overlay spinner saat loading true */}
+      {loading && <FullscreenSpinner />}
     </main>
   );
 }
