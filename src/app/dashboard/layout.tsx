@@ -1,3 +1,5 @@
+// File: src/app/dashboard/layout.tsx
+
 'use client';
 
 import React, { useState } from 'react';
@@ -38,6 +40,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           <button className="btn btn--delete" onClick={() => setShowLogoutConfirm(true)}>Keluar</button>
         </header>
 
+        {/* Kode dari page.tsx Anda akan dirender di sini */}
         <main className="content">{children}</main>
 
         {showLogoutConfirm && (
@@ -92,7 +95,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           width: min(100% - clamp(16px, 6vw, 48px), 1040px);
           position: fixed; top: 0; left: 50%; transform: translateX(-50%);
           z-index: 40;
-          padding: clamp(6px, 1.8vw, 10px) clamp(8px, 2vw, 12px);
+          
+          /* --- PERBAIKAN HEADER ADA DI SINI --- */
+          padding-top: calc(clamp(6px, 1.8vw, 10px) + env(safe-area-inset-top));
+          padding-bottom: clamp(6px, 1.8vw, 10px);
+          padding-left: clamp(8px, 2vw, 12px);
+          padding-right: clamp(8px, 2vw, 12px);
+          /* --- AKHIR PERBAIKAN --- */
+          
           display: flex; align-items: center; justify-content: space-between; gap: clamp(6px, 2vw, 8px);
           flex-wrap: wrap; border: 1px solid rgba(255,255,255,0.12); border-radius: 14px;
           background: rgba(20,22,28,0.6); backdrop-filter: blur(10px);
@@ -105,18 +115,16 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           }
         }
 
+        /* ... Sisa CSS Anda tidak berubah ... */
         .brand { font-weight: 600; letter-spacing: .2px; display: inline-flex; align-items: center; gap: 8px; font-size: clamp(.9rem, 2.6vw, 1rem); flex: 1; }
         .dot { width: 8px; height: 8px; border-radius: 999px; display: inline-block; background: #22c55e; margin-right: 8px; animation: dotCycle 2.4s steps(1, end) infinite; }
         @keyframes dotCycle {
           0% { background: #22c55e; } 20% { background: #ef4444; } 40% { background: rgb(2, 255, 133); } 60% { background: #3b82f6; } 80% { background: #f59e0b; } 100% { background: #22c55e; }
         }
         @media (prefers-reduced-motion: reduce) { .dot { animation: none; } }
-
         .hamburger { display: inline-flex; }
         @media (min-width: 900px) { .hamburger { display: none; } }
-
         .content { position: relative; z-index: 0; }
-
         .btn {
           padding: 8px 12px; border-radius: 10px; font-size: 14px; font-weight: 500;
           border: 1px solid rgba(255,255,255,0.12); background: rgba(255,255,255,0.05); color: #e5e7eb;
@@ -129,7 +137,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         .btn--delete:hover { background: #dc2626; }
         .btn--ghost { background: transparent; border: none; color: #cbd5e1; }
         .btn--ghost:hover { background: rgba(255,255,255,0.1); }
-
         .modalBackdrop {
           position: fixed; inset: 0; z-index: 50;
           background: rgba(0,0,0,0.6); backdrop-filter: blur(5px);
@@ -145,7 +152,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         .warnIcon { color: #f59e0b; }
         .modalDesc { margin: 12px 0 0; color: #cbd5e1; font-size: .95rem; }
         .modalActions { margin-top: 20px; display: flex; justify-content: flex-end; gap: 8px; }
-
         @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
         @keyframes zoomIn { from { opacity: 0; transform: scale(.95); } to { opacity: 1; transform: scale(1); } }
       `}</style>

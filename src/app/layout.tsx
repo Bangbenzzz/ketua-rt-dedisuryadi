@@ -1,28 +1,29 @@
-// src/app/layout.tsx
-import './globals.css';
-import type { Metadata, Viewport } from 'next';
-import ClientSetup from './ClientSetup';
+// File: src/app/layout.tsx
+
+import type { Metadata } from "next";
+import "./globals.css"; // CSS global Anda
 
 export const metadata: Metadata = {
-  title: 'Admin RT',
-  description: 'Manajemen keuangan & data warga RT',
+  title: "Aplikasi Keuangan Dedi Suryadi",
+  description: "Aplikasi pencatatan pemasukan dan pengeluaran pribadi.",
+  
+  // --- INI ADALAH KUNCI UTAMANYA ---
+  // Mengaktifkan "safe area" di perangkat mobile
+  viewport: {
+    width: 'device-width',
+    initialScale: 1,
+    viewportFit: 'cover',
+  },
 };
 
-export const viewport: Viewport = {
-  width: 'device-width',
-  initialScale: 1,
-  maximumScale: 1,
-  viewportFit: 'cover',
-  themeColor: '#0b0f17',
-  colorScheme: 'dark',
-};
-
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default function RootLayout({
+  children,
+}: Readonly<{
+  children: React.ReactNode;
+}>) {
   return (
     <html lang="id">
-      <body>
-        <ClientSetup>{children}</ClientSetup>
-      </body>
+      <body>{children}</body>
     </html>
   );
 }
