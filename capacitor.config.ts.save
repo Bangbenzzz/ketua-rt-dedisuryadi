@@ -1,0 +1,14 @@
+import type { CapacitorConfig } from '@capacitor/cli'
+
+const config: CapacitorConfig = {
+  appId: 'io.github.benzzzz.rtcikadu',   // pakai lowercase, tanpa tanda minus
+  appName: 'Admin RT Cikadu',
+  webDir: 'out',
+  server: {
+    url: 'https://app.domainkamu.com',   // ganti ke URL Next.js kamu (HTTPS)
+    cleartext: false,
+    allowNavigation: ['app.domainkamu.com']
+  }
+}
+
+export default config

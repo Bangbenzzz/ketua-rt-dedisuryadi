@@ -8,6 +8,9 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@capacitor/android": "^7.4.4",
+    "@capacitor/cli": "^7.4.4",
+    "@capacitor/core": "^7.4.4",
     "firebase": "^10.14.1",
     "jspdf": "^2.5.2",
     "jspdf-autotable": "^3.8.4",

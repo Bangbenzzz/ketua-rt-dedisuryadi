@@ -1,0 +1,12 @@
+nohup: ignoring input
+
+> dev
+> next dev
+
+  ▲ Next.js 14.2.5
+  - Local:        http://localhost:3000
+  - Environments: .env.local
+
+ ✓ Starting...
+ ✓ Ready in 3.5s
+[?25h
