@@ -5,8 +5,8 @@ const config: CapacitorConfig = {
   appName: 'Admin RT Cikadu',
   webDir: 'out',
   server: {
-    // INI YANG DIUBAH
-    url: 'https://slangiest-collinearly-lukas.ngrok-free.dev',
+    // === UBAH BAGIAN INI ===
+    url: 'https://admin-rt-kp-cikadu.vercel.app', // GANTI DENGAN URL VERCEL-MU
     cleartext: false
   }
 };
