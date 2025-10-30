@@ -1,6 +1,5 @@
 'use client';
 
-// DIUBAH: Tambahkan createPortal dari react-dom
 import React, { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { db, auth } from '../../../lib/firebase';
@@ -54,7 +53,8 @@ function getKategoriUmur(age: number): KategoriUmur {
   if (age <= 59) return 'Dewasa';
   return 'Lansia';
 }
-function validateNik(nik: string) { return /^\d{16}/.test(nik); } function validateNoKk(noKk: string) { return /^\d{16}/.test(noKk); }
+function validateNik(nik: string) { return /^\d{16}$/.test(nik); }
+function validateNoKk(noKk: string) { return /^\d{16}$/.test(noKk); }
 function validateDate(s: string) { return /^\d{4}-\d{2}-\d{2}$/.test(s) && !!parseYmd(s); }
 
 function usePagination<T>(items: T[], pageSize: number) {
@@ -111,12 +111,10 @@ export default function WargaPageClient() {
 
   const [showAddChoiceModal, setShowAddChoiceModal] = useState(false);
   const [addMode, setAddMode] = useState<'family' | 'single'>('family');
-  
-  // DIUBAH: State untuk memastikan komponen sudah ter-mount di client sebelum menggunakan Portal
+
+  // Portal mount flag
   const [isMounted, setIsMounted] = useState(false);
-  useEffect(() => {
-    setIsMounted(true);
-  }, []);
+  useEffect(() => { setIsMounted(true); }, []);
 
   const showError = (message: string, title = 'Gagal') => setNotice({ type: 'error', title, message });
   const showSuccess = (message: string, title = 'Berhasil') => setNotice({ type: 'success', title, message });
@@ -383,7 +381,7 @@ export default function WargaPageClient() {
     <div className="wrap">
       <header className="head">
         <div className="title">
-          <h1>Daftar Warga</h1>
+          <h2>DAFTAR WARGA KP. CIKADU</h2>
           <p className="sub">Berikut adalah tabel data warga Kp. Cikadu</p>
         </div>
 
@@ -400,7 +398,7 @@ export default function WargaPageClient() {
             <button className={`tab ${view === 'kk' ? 'active' : ''}`} onClick={() => { setPage(1); setView('kk'); }}>Kartu KK</button>
           </div>
 
-          <div className="search">
+        <div className="search">
             <input placeholder="Cari nama / NIK / No KK..." value={query} onChange={(e) => { setPage(1); setQuery(e.target.value); }} />
             <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden><path d="M21 21l-4.35-4.35M10 17a7 7 0 1 1 0-14 7 7 0 0 1 0 14z" stroke="currentColor" strokeWidth="1.6" fill="none" /></svg>
           </div>
@@ -540,7 +538,7 @@ export default function WargaPageClient() {
             onSubmit={(payload) => upsertWarga(payload, undefined)}
             onQuickAddChild={() => showInfo('Fitur ini hanya untuk mengedit Kepala Keluarga/Istri.')}
           />
-        ) : ( // addMode === 'family'
+        ) : (
           <KeluargaFormModal
             onClose={() => setShowForm(false)}
             onSubmit={(payload) => createKeluarga(payload)}
@@ -584,13 +582,11 @@ export default function WargaPageClient() {
         />
       )}
 
-      {/* DIUBAH: Menggunakan React Portal untuk merender Notifikasi */}
       {isMounted && notice && createPortal(
         <NoticeModal notice={notice} onClose={() => setNotice(null)} />,
         document.body
       )}
 
-      {/* Password Gate overlay */}
       {!authed && <PasswordGate onSuccess={handleAuthSuccess} />}
 
       <style jsx>{`
@@ -784,14 +780,36 @@ function Pagination({ page, totalPages, total, onPage }: { page: number; totalPa
   );
 }
 
+/* Spinner: inline style + animateTransform (tanpa styled-jsx/@keyframes) */
 function Spinner({ label = 'Loading...' }: { label?: string }) {
   return (
-    <div className="spinWrap">
-      <svg width="24" height="24" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-        <g fill="none" strokeWidth="1.6"><circle cx="12" cy="12" r="9.5" strokeOpacity=".3" /><path d="M12 2.5a9.5 9.5 0 0 1 0 19z" /></g>
+    <div
+      style={{
+        display: 'inline-flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 10,
+        color: '#9ca3af',
+      }}
+    >
+      <svg width="24" height="24" viewBox="0 0 24 24" stroke="currentColor">
+        <g fill="none" strokeWidth="1.6">
+          <circle cx="12" cy="12" r="9.5" strokeOpacity=".3" />
+          <path d="M12 2.5a9.5 9.5 0 0 1 0 19z">
+            <animateTransform
+              attributeName="transform"
+              attributeType="XML"
+              type="rotate"
+              from="0 12 12"
+              to="360 12 12"
+              dur="1s"
+              repeatCount="indefinite"
+            />
+          </path>
+        </g>
       </svg>
       {label && <span>{label}</span>}
-      <style jsx>{` .spinWrap { display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; color: #9ca3af; } svg { animation: spin 1s linear infinite; } @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } } `}</style>
     </div>
   );
 }
@@ -809,7 +827,17 @@ MODAL COMPONENTS
 ================================================================================================ */
 
 /* Base Modal (freeze scroll) */
-function Modal({ children, onClose, title = 'Modal', width = 540 }: { children: React.ReactNode; onClose: () => void; title: string; width?: number; }) {
+function Modal({
+  children,
+  onClose,
+  title = 'Modal',
+  width = 540,
+}: {
+  children: React.ReactNode;
+  onClose: () => void;
+  title: string;
+  width?: number;
+}) {
   useEffect(() => {
     const handleEsc = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
     document.addEventListener('keydown', handleEsc);
@@ -829,58 +857,69 @@ function Modal({ children, onClose, title = 'Modal', width = 540 }: { children: 
 
   return (
     <div className="scrim" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: width }}>
+      <div
+        className="modal"
+        onClick={(e) => e.stopPropagation()}
+        style={{ maxWidth: width }}
+      >
         <header className="modalHead">
           <h2>{title}</h2>
           <button className="closeBtn" onClick={onClose} title="Tutup">×</button>
         </header>
         <div className="modalBody">{children}</div>
       </div>
+
       <style jsx>{`
-    .scrim {
-      position: fixed; inset: 0; z-index: 50;
-      background: rgba(0,0,0,.5); backdrop-filter: blur(4px);
-      display: grid; place-items: center;
-      padding: 16px;
-      animation: fadeIn .15s ease-out;
-      overscroll-behavior: contain;
-      padding-bottom: calc(16px + env(safe-area-inset-bottom));
-    }
-    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        .scrim {
+          position: fixed; inset: 0;
+          z-index: 20000; /* pastikan di atas header */
+          background: rgba(0,0,0,.5); backdrop-filter: blur(4px);
 
-    .modal {
-      width: 100%;
-      background: #1f2229;
-      color: #e5e7eb;
-      border-radius: 16px; border: 1px solid rgba(255,255,255,.12);
-      overflow: hidden;
-      box-shadow: 0 10px 25px rgba(0,0,0,.2);
-      animation: zoomIn .15s cubic-bezier(0.2, 0.8, 0.2, 1);
-    }
-    @keyframes zoomIn {
-      from { opacity: 0; transform: scale(.95) translateY(10px); }
-      to { opacity: 1; transform: scale(1) translateY(0); }
-    }
+          /* sedikit turun dari header */
+          display: flex; align-items: flex-start; justify-content: center;
 
-    .modalHead {
-      display: flex; align-items: center; justify-content: space-between;
-      padding: 12px 16px;
-      border-bottom: 1px solid rgba(255,255,255,.12);
-    }
-    .modalHead h2 { margin: 0; font-size: 1.1rem; }
-    .closeBtn {
-      background: transparent; border: none; color: #9ca3af;
-      font-size: 1.6rem; line-height: 1; width: 32px; height: 32px;
-      cursor: pointer;
-    }
-    .closeBtn:hover { color: #fff; }
+          padding: 16px;
+          padding-top: calc(16px + var(--app-header-h, 64px) + env(safe-area-inset-top));
+          padding-bottom: calc(16px + env(safe-area-inset-bottom));
 
-    .modalBody {
-      padding: 16px;
-      max-height: calc(90vh - 60px);
-      overflow: auto;
-    }
-  `}</style>
+          animation: fadeIn .15s ease-out;
+          overscroll-behavior: contain;
+        }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+        .modal {
+          width: 100%;
+          background: #1f2229; color: #e5e7eb;
+          border-radius: 16px; border: 1px solid rgba(255,255,255,.12);
+          overflow: hidden;
+          box-shadow: 0 10px 25px rgba(0,0,0,.2);
+          animation: zoomIn .15s cubic-bezier(0.2, 0.8, 0.2, 1);
+        }
+        @keyframes zoomIn {
+          from { opacity: 0; transform: scale(.95) translateY(10px); }
+          to { opacity: 1; transform: scale(1) translateY(0); }
+        }
+
+        .modalHead {
+          display: flex; align-items: center; justify-content: space-between;
+          padding: 12px 16px;
+          border-bottom: 1px solid rgba(255,255,255,.12);
+        }
+        .modalHead h2 { margin: 0; font-size: 1.1rem; }
+        .closeBtn {
+          background: transparent; border: none; color: #9ca3af;
+          font-size: 1.6rem; line-height: 1; width: 32px; height: 32px;
+          cursor: pointer;
+        }
+        .closeBtn:hover { color: #fff; }
+
+        /* Tinggi konten menyesuaikan offset header supaya nggak kepotong */
+        .modalBody {
+          padding: 16px;
+          max-height: calc(100vh - var(--app-header-h, 64px) - 120px);
+          overflow: auto;
+        }
+      `}</style>
     </div>
   );
 }
@@ -1349,7 +1388,7 @@ function ConfirmModal(
   );
 }
 
-/* Modal Notifikasi (Toast) - z-index tetap tinggi untuk jaga-jaga */
+/* Modal Notifikasi (Toast) */
 function NoticeModal({ notice, onClose }: { notice: Notice; onClose: () => void; }) {
   const colors = {
     success: '#22c55e', error: '#ef4444', info: '#3b82f6', warning: '#f59e0b',
@@ -1371,7 +1410,7 @@ function NoticeModal({ notice, onClose }: { notice: Notice; onClose: () => void;
           position: fixed;
           top: calc(16px + env(safe-area-inset-top));
           right: 16px;
-          z-index: 10001; /* Nilai z-index tinggi untuk memastikan di atas elemen lain di root */
+          z-index: 10001;
           background: #1f2229; color: #e5e7eb;
           border: 1px solid rgba(255,255,255,.12); border-left-width: 4px;
           border-radius: 8px; padding: 12px 16px;
@@ -1392,14 +1431,13 @@ function NoticeModal({ notice, onClose }: { notice: Notice; onClose: () => void;
   );
 }
 
-/* Password Gate (overlay elegan, responsif, freeze scroll) */
+/* Password Gate (inline styles; tanpa styled-jsx/@keyframes) */
 function PasswordGate({ onSuccess }: { onSuccess: () => void }) {
   const [pw, setPw] = useState('');
   const [show, setShow] = useState(false);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  // Freeze scroll saat gate aktif
   useEffect(() => {
     const prevOverflow = document.body.style.overflow;
     const prevTouch = (document.body.style as any).touchAction as string | undefined;
@@ -1422,11 +1460,8 @@ function PasswordGate({ onSuccess }: { onSuccess: () => void }) {
         body: JSON.stringify({ password: pw }),
       });
       const data = await res.json().catch(() => ({}));
-      if (res.ok && data?.ok) {
-        onSuccess();
-      } else {
-        setErr(data?.message || 'Password salah.');
-      }
+      if (res.ok && data?.ok) onSuccess();
+      else setErr(data?.message || 'Password salah.');
     } catch {
       setErr('Gagal memverifikasi. Periksa koneksi Anda.');
     } finally {
@@ -1435,39 +1470,190 @@ function PasswordGate({ onSuccess }: { onSuccess: () => void }) {
   };
 
   return (
-    <div className="authScrim" role="dialog" aria-modal="true" aria-label="Kunci halaman daftar warga">
-      <div className="card">
-        <div className="iconWrap">
-          <div className="icon"><LockIcon /></div>
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Kunci halaman daftar warga"
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 9999,
+        display: 'grid',
+        placeItems: 'center',
+        padding: 16,
+        minHeight: '100dvh',
+        overscrollBehavior: 'contain',
+        background:
+          'radial-gradient(1200px 600px at 50% -20%, rgba(34,197,94,.18), transparent 60%), rgba(0,0,0,.55)',
+        backdropFilter: 'blur(4px)',
+      }}
+    >
+      <div
+        style={{
+          width: '100%',
+          maxWidth: 420,
+          background: '#1f2229',
+          color: '#e5e7eb',
+          border: '1px solid rgba(255,255,255,.12)',
+          borderRadius: 16,
+          padding: 18,
+          boxShadow: '0 10px 25px rgba(0,0,0,.25)',
+          display: 'grid',
+          gap: 12,
+          textAlign: 'center',
+        }}
+      >
+        <div style={{ display: 'grid', placeItems: 'center' }}>
+          <div
+            style={{
+              width: 52,
+              height: 52,
+              borderRadius: 14,
+              display: 'grid',
+              placeItems: 'center',
+              background: 'rgba(34,197,94,.15)',
+              color: '#86efac',
+              border: '1px solid rgba(34,197,94,.3)',
+            }}
+          >
+            <LockIcon />
+          </div>
         </div>
-        <h2>Masuk ke Daftar Warga</h2>
-        <p className="sub">Halaman ini dilindungi. Jika ingin melanjutkan silahkan masukan password.</p>
 
-        <form onSubmit={handleSubmit} className="form">
-          <label className="label">Password</label>
-          <div className="pwBox">
+        <h2 style={{ margin: 0, fontSize: '1.1rem' }}>Masuk ke Daftar Warga</h2>
+        <p style={{ margin: 0, color: '#cbd5e1', lineHeight: 1.6 }}>
+          Halaman ini dilindungi. Jika ingin melanjutkan silahkan masukan password.
+        </p>
+
+        <form onSubmit={handleSubmit} style={{ display: 'grid', gap: 10, textAlign: 'left' }}>
+          <label style={{ color: '#9ca3af', fontSize: '.9rem' }}>Password</label>
+
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: '1fr auto',
+              gap: 8,
+              alignItems: 'center',
+              background: 'rgba(255,255,255,.03)',
+              border: '1px solid rgba(255,255,255,.12)',
+              borderRadius: 10,
+              padding: 8,
+            }}
+          >
             <input
               type={show ? 'text' : 'password'}
               value={pw}
               onChange={(e) => setPw(e.target.value)}
               placeholder="Masukan Password"
               autoFocus
+              style={{
+                background: 'transparent',
+                border: 'none',
+                outline: 'none',
+                color: '#e5e7eb',
+                padding: '6px 8px',
+                fontSize: '1rem',
+                minWidth: 0,
+              }}
             />
-            <button type="button" className="toggle" onClick={() => setShow(s => !s)}>
+            <button
+              type="button"
+              onClick={() => setShow((s) => !s)}
+              style={{
+                background: 'rgba(255,255,255,.06)',
+                color: '#cbd5e1',
+                border: '1px solid rgba(255,255,255,.12)',
+                padding: '6px 10px',
+                borderRadius: 8,
+                cursor: 'pointer',
+                fontSize: '.85rem',
+              }}
+            >
               {show ? 'Sembunyikan' : 'Tampilkan'}
             </button>
           </div>
 
-          {err && <div className="err">{err}</div>}
+          {err && (
+            <div
+              style={{
+                color: '#fecaca',
+                background: 'rgba(239,68,68,.1)',
+                border: '1px solid rgba(239,68,68,.35)',
+                borderRadius: 10,
+                padding: '8px 10px',
+                fontSize: '.9rem',
+              }}
+            >
+              {err}
+            </div>
+          )}
 
-          <div className="actions">
-            <a className="btn ghost" href="/dashboard">← Dashboard</a>
-            <button type="submit" className="btn primary" disabled={!pw || loading}>
+          <div
+            style={{
+              marginTop: 6,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 10,
+              flexWrap: 'wrap',
+            }}
+          >
+            <a
+              href="/dashboard"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 8,
+                padding: '10px 12px',
+                borderRadius: 10,
+                fontWeight: 600,
+                minHeight: 40,
+                background: 'rgba(255,255,255,.06)',
+                color: '#e5e7eb',
+                border: '1px solid rgba(255,255,255,.12)',
+                flex: '1 1 160px',
+                textDecoration: 'none',
+              }}
+            >
+              ← Dashboard
+            </a>
+
+            <button
+              type="submit"
+              disabled={!pw || loading}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 8,
+                padding: '10px 12px',
+                borderRadius: 10,
+                fontWeight: 600,
+                minHeight: 40,
+                background: '#22c55e',
+                color: '#fff',
+                border: 'none',
+                flex: '1 1 160px',
+                opacity: !pw || loading ? 0.6 : 1,
+                cursor: !pw || loading ? 'not-allowed' : 'pointer',
+              }}
+            >
               {loading && (
-                <svg width="16" height="16" viewBox="0 0 24 24" className="sp">
+                <svg width="16" height="16" viewBox="0 0 24 24" style={{ marginRight: 6 }}>
                   <g fill="none" stroke="currentColor" strokeWidth="2">
                     <circle cx="12" cy="12" r="9.5" strokeOpacity=".3" />
-                    <path d="M12 2.5a9.5 9.5 0 0 1 0 19z" />
+                    <path d="M12 2.5a9.5 9.5 0 0 1 0 19z">
+                      <animateTransform
+                        attributeName="transform"
+                        attributeType="XML"
+                        type="rotate"
+                        from="0 12 12"
+                        to="360 12 12"
+                        dur="0.9s"
+                        repeatCount="indefinite"
+                      />
+                    </path>
                   </g>
                 </svg>
               )}
@@ -1476,80 +1662,6 @@ function PasswordGate({ onSuccess }: { onSuccess: () => void }) {
           </div>
         </form>
       </div>
-
-      <style jsx>{`
-        .authScrim {
-          position: fixed; inset: 0; z-index: 9999;
-          background:
-            radial-gradient(1200px 600px at 50% -20%, rgba(34,197,94,.18), transparent 60%),
-            rgba(0,0,0,.55);
-          backdrop-filter: blur(4px);
-          display: grid; place-items: center;
-          padding: 16px;
-          overscroll-behavior: contain;
-          padding-bottom: calc(16px + env(safe-area-inset-bottom));
-        }
-        .card {
-          width: 100%; max-width: 420px;
-          background: #1f2229; color: #e5e7eb;
-          border: 1px solid rgba(255,255,255,.12);
-          border-radius: 16px; padding: 18px;
-          box-shadow: 0 10px 25px rgba(0,0,0,.25);
-          animation: pop .18s ease-out;
-          display: grid; gap: 12px;
-          text-align: center;
-        }
-        @keyframes pop { from { opacity: 0; transform: translateY(8px) scale(.98) } to { opacity: 1; transform: translateY(0) scale(1) } }
-        .iconWrap { display: grid; place-items: center; }
-        .icon {
-          width: 52px; height: 52px; border-radius: 14px;
-          display: grid; place-items: center;
-          background: rgba(34,197,94,.15);
-          color: #86efac; border: 1px solid rgba(34,197,94,.3);
-        }
-        h2 { margin: 0; font-size: 1.1rem; }
-        .sub { margin: 0; color: #cbd5e1; line-height: 1.6; }
-
-        .form { display: grid; gap: 10px; text-align: left; }
-        .label { color: #9ca3af; font-size: .9rem; }
-        .pwBox {
-          display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center;
-          background: rgba(255,255,255,.03);
-          border: 1px solid rgba(255,255,255,.12);
-          border-radius: 10px; padding: 8px;
-        }
-        .pwBox input {
-          background: transparent; border: none; outline: none; color: #e5e7eb;
-          padding: 6px 8px; font-size: 1rem;
-        }
-        .toggle {
-          background: rgba(255,255,255,.06); color: #cbd5e1; border: 1px solid rgba(255,255,255,.12);
-          padding: 6px 10px; border-radius: 8px; cursor: pointer; font-size: .85rem;
-        }
-        .toggle:hover { filter: brightness(1.05); }
-
-        .err {
-          color: #fecaca; background: rgba(239,68,68,.1);
-          border: 1px solid rgba(239,68,68,.35); border-radius: 10px; padding: 8px 10px; font-size: .9rem;
-        }
-        .actions { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-top: 6px; }
-        .btn {
-          display: inline-flex; align-items: center; justify-content: center; gap: 8px;
-          padding: 10px 12px; border-radius: 10px; font-weight: 600; min-height: 40px;
-          background: rgba(255,255,255,.08); color: #e5e7eb; border: 1px solid rgba(255,255,255,.12);
-          width: 100%;
-        }
-        .btn.ghost { background: rgba(255,255,255,.06); width: auto; }
-        .btn.primary { background: #22c55e; color: #fff; border: none; }
-        .btn[disabled] { opacity: .6; cursor: not-allowed; }
-        .sp { animation: spin .9s linear infinite; }
-        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-
-        @media (max-width: 480px) {
-          .actions { flex-direction: column-reverse; }
-          .btn.ghost, .btn.primary { width: 100%; }
-        }
-      `}</style>
     </div>
   );
 }

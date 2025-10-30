@@ -54,6 +54,13 @@ function getNowJKT() {
 function monthKeyJKT(d: Date) {
   return d.toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta', year: 'numeric', month: '2-digit' }); // YYYY-MM
 }
+// Tambahan: key bulan sebelumnya (WIB)
+function prevMonthKeyJKT(d: Date) {
+  const p = new Date(d);
+  p.setDate(1);
+  p.setMonth(p.getMonth() - 1);
+  return p.toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta', year: 'numeric', month: '2-digit' });
+}
 
 type RangeKey = 7 | 14 | 30 | 'BULAN';
 
@@ -136,6 +143,22 @@ export default function DashboardPage() {
     return { pemasukanBulan: masuk, pengeluaranBulan: keluar, sisaBulan: masuk - keluar };
   }, [data]);
 
+  // Tambahan: sisa bulan lalu dan tren
+  const { sisaBulanPrev } = useMemo(() => {
+    const prevKey = prevMonthKeyJKT(getNowJKT());
+    let masuk = 0, keluar = 0;
+    for (const t of data) {
+      const d = new Date(t.tanggal);
+      if (monthKeyJKT(d) === prevKey) {
+        if (t.jenis === 'Pemasukan') masuk += t.nominal || 0;
+        else keluar += t.nominal || 0;
+      }
+    }
+    return { sisaBulanPrev: masuk - keluar };
+  }, [data]);
+  const deltaSisaBulan = sisaBulan - sisaBulanPrev;
+  const pctSisaBulan = sisaBulanPrev === 0 ? null : Math.round((deltaSisaBulan / Math.abs(sisaBulanPrev)) * 100);
+
   const chartData = useMemo(() => {
     if (range !== 'BULAN') return data;
     const nowKey = monthKeyJKT(getNowJKT());
@@ -163,7 +186,7 @@ export default function DashboardPage() {
       const pageWidth = (pageSize?.getWidth?.() as number) ?? (pageSize?.width as number) ?? 595;
       const pageHeight = (pageSize?.getHeight?.() as number) ?? (pageSize?.height as number) ?? 842;
 
-      const title = 'Riwayat Transaksi';
+      const title = 'Riwayat Transaksi Keuangan Kp. Cikadu RT. 02';
       const tglExp = `Tanggal ekspor: ${new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })} WIB`;
 
       (docPDF as any).setDrawColor(16, 163, 74);
@@ -290,16 +313,35 @@ export default function DashboardPage() {
       <section className="container">
         {/* Ringkasan */}
         <div className="gridStats">
-          <div className="card"><div className="cardTitle">Pemasukan</div><div className="amount green" title={formatIDR(pemasukan)}>{formatIDRCompact(pemasukan)}</div></div>
-          <div className="card"><div className="cardTitle">Pengeluaran</div><div className="amount red" title={formatIDR(pengeluaran)}>{formatIDRCompact(pengeluaran)}</div></div>
-          <div className="card"><div className="cardTitle">Sisa Saldo</div><div className="amount" title={formatIDR(sisa)}>{sisa === 0 ? 'Rp 0' : formatIDRCompact(sisa)}</div></div>
+          <div className="card">
+            <div className="cardTitle">Pemasukan</div>
+            <div className="amount amount--tight green" title={formatIDR(pemasukan)}>{formatIDR(pemasukan)}</div>
+          </div>
+          <div className="card">
+            <div className="cardTitle">Pengeluaran</div>
+            <div className="amount amount--tight red" title={formatIDR(pengeluaran)}>{formatIDR(pengeluaran)}</div>
+          </div>
+          <div className="card">
+            <div className="cardTitle">Sisa Saldo</div>
+            <div className="amount amount--tight" title={formatIDR(sisa)}>{formatIDR(sisa)}</div>
+          </div>
           <div className="card">
             <div className="cardTitle">Bulan Ini</div>
             <div
-              className="amount"
+              className="amount amount--tight"
               title={`Pemasukan: ${formatIDR(pemasukanBulan)} • Pengeluaran: ${formatIDR(pengeluaranBulan)}`}
             >
-              {sisaBulan === 0 ? 'Rp 0' : formatIDRCompact(sisaBulan)}
+              {formatIDR(sisaBulan)}
+            </div>
+            <div className="trend">
+              {pctSisaBulan === null ? (
+                <span className="mutedSm">—</span>
+              ) : (
+                <span className={`delta ${deltaSisaBulan >= 0 ? 'up' : 'down'}`}>
+                  {deltaSisaBulan >= 0 ? '▲' : '▼'} {Math.abs(pctSisaBulan)}%
+                </span>
+              )}
+              <span className="mutedSm"> dibanding bln lalu</span>
             </div>
           </div>
         </div>
@@ -477,7 +519,14 @@ export default function DashboardPage() {
         .cardTitle { color: #cbd5e1; font-size: clamp(.85rem, 2.2vw, .95rem); }
 
         .amount { display: block; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: clamp(.95rem, 3.2vw, 1.4rem); font-weight: 700; letter-spacing: .3px; }
+        .amount--tight { text-align: right; font-variant-numeric: tabular-nums; word-break: keep-all; }
         .green { color: #86efac; } .red { color: #fca5a5; }
+
+        .trend { margin-top: 4px; font-size: 12px; display: flex; gap: 6px; justify-content: flex-end; align-items: baseline; }
+        .delta { font-weight: 600; }
+        .delta.up { color: #86efac; }
+        .delta.down { color: #fca5a5; }
+        .mutedSm { color: #94a3b8; }
 
         .chartCard { display: grid; }
         .chartHead { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; gap: 10px; }
@@ -485,6 +534,9 @@ export default function DashboardPage() {
         .chip { padding: 4px 10px; border-radius: 999px; font-size: 12px; color: #cbd5e1; border: 1px solid rgba(255,255,255,0.14); background: rgba(255,255,255,0.05); transition: .15s; }
         .chip:hover { background: rgba(255,255,255,0.08); }
         .chip.active { color: #eafff3; border-color: rgba(34,197,94,0.45); background: linear-gradient(135deg, rgba(34,197,94,0.18), rgba(16,185,129,0.12)); }
+
+        /* Sembunyikan label sumbu (angka tanggal) di SVG chart tanpa mengubah komponen chart */
+        .chartCard :global(svg text[font-size="10"]) { display: none; }
 
         .legend { display: flex; gap: 12px; align-items: center; margin-top: 8px; color: #cbd5e1; font-size: 12px; flex-wrap: wrap; }
         .legendItem { display: inline-flex; align-items: center; gap: 6px; }

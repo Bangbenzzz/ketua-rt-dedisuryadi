@@ -4,8 +4,8 @@ import type { Metadata } from "next";
 import "./globals.css"; // CSS global Anda
 
 export const metadata: Metadata = {
-  title: "Aplikasi Keuangan Dedi Suryadi",
-  description: "Aplikasi pencatatan pemasukan dan pengeluaran pribadi.",
+  title: "Ketua RT. 02 Dedi Suryadi",
+  description: "Aplikasi pencatatan pemasukan dan pengeluaran Kp. Cikadu.",
   
   // --- INI ADALAH KUNCI UTAMANYA ---
   // Mengaktifkan "safe area" di perangkat mobile

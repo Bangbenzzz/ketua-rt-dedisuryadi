@@ -1,252 +1,257 @@
-// src/components/DualLineTicker.tsx
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 
-type Tx = {
+type Transaksi = {
   jenis: 'Pemasukan' | 'Pengeluaran';
   nominal: number;
   tanggal: string; // ISO
 };
 
-export default function DualLineTicker({
-  data,
-  range = 14,
-  height = 240,
-  loopMs = 8000, // durasi 1 loop penuh (semakin kecil semakin cepat)
-}: {
-  data: Tx[];
-  range?: 7 | 14 | 30;
+type Props = {
+  data: Transaksi[];
+  range: 7 | 14 | 30;
   height?: number;
-  loopMs?: number;
-}) {
-  const wrapRef = useRef<HTMLDivElement | null>(null);
-  const [w, setW] = useState(600);
-  const [progress, setProgress] = useState(0); // 0..1
+  loopMs?: number; // tidak dipakai
+};
 
-  // Hitung total per hari (pemasukan dan pengeluaran) agar bisa saling silang
-  const series = useMemo(() => {
-    const byDay = new Map<string, { in: number; out: number }>();
-    data.forEach((t) => {
-      const d = new Date(t.tanggal);
-      d.setHours(0, 0, 0, 0);
-      const key = d.toISOString().slice(0, 10);
-      const v = byDay.get(key) || { in: 0, out: 0 };
-      if (t.jenis === 'Pemasukan') v.in += t.nominal;
-      else v.out += t.nominal;
-      byDay.set(key, v);
+// Helpers zona WIB
+function getNowJKT() {
+  return new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Jakarta' }));
+}
+function dayKeyJKT(d: Date) {
+  return d.toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' }); // YYYY-MM-DD
+}
+function buildDays(range: 7 | 14 | 30) {
+  const now = getNowJKT();
+  const days: { key: string; bd: { year: number; month: number; day: number } }[] = [];
+  for (let i = range - 1; i >= 0; i--) {
+    const d = new Date(now);
+    d.setDate(now.getDate() - i);
+    days.push({
+      key: dayKeyJKT(d),
+      bd: { year: d.getFullYear(), month: d.getMonth() + 1, day: d.getDate() },
     });
+  }
+  return days;
+}
 
-    // Siapkan N hari terakhir
-    const days: { key: string; label: string }[] = [];
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    for (let i = range - 1; i >= 0; i--) {
-      const dd = new Date(today);
-      dd.setDate(today.getDate() - i);
-      const key = dd.toISOString().slice(0, 10);
-      const label = dd.toLocaleDateString('id-ID', { day: '2-digit', month: 'short' });
-      days.push({ key, label });
+// EMA sederhana
+function buildEMA(values: number[], period: number) {
+  const k = 2 / (period + 1);
+  const out: number[] = [];
+  let ema = values[0] ?? 0;
+  for (let i = 0; i < values.length; i++) {
+    ema = i === 0 ? values[0] : values[i] * k + ema * (1 - k);
+    out.push(ema);
+  }
+  return out;
+}
+
+export default function DualLineTicker({ data, range, height = 260 }: Props) {
+  const wrapRef = useRef<HTMLDivElement | null>(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const chartRef = useRef<any>(null);
+  const candleSeriesRef = useRef<any>(null);
+  const lineSeriesRef = useRef<any>(null);
+
+  // Olah data ke candle + garis EMA (garis tren hijau kebiruan)
+  const { candles, emaLine, buyMarkers } = useMemo(() => {
+    const days = buildDays(range);
+    const firstKey = days[0]?.key;
+
+    // saldo awal sebelum range
+    let saldoAwal = 0;
+    for (const t of data) {
+      const k = dayKeyJKT(new Date(t.tanggal));
+      if (k < firstKey) {
+        saldoAwal += (t.jenis === 'Pemasukan' ? 1 : -1) * (t.nominal || 0);
+      }
     }
 
-    // Deret nilai per hari (bukan kumulatif) agar dua garis bisa crossing
-    const arrIn: number[] = [];
-    const arrOut: number[] = [];
-    const labels: string[] = [];
+    // sum pemasukan/pengeluaran per hari dalam range
+    const sumIn: Record<string, number> = {};
+    const sumOut: Record<string, number> = {};
+    for (const t of data) {
+      const k = dayKeyJKT(new Date(t.tanggal));
+      if (!days.find((d) => d.key === k)) continue;
+      if (t.jenis === 'Pemasukan') sumIn[k] = (sumIn[k] || 0) + (t.nominal || 0);
+      else sumOut[k] = (sumOut[k] || 0) + (t.nominal || 0);
+    }
+
+    // bentuk candle dari saldo harian
+    let open = saldoAwal;
+    const candleArr: Array<{ time: any; open: number; high: number; low: number; close: number }> = [];
+    const closes: number[] = [];
+
     for (const d of days) {
-      const v = byDay.get(d.key) || { in: 0, out: 0 };
-      arrIn.push(v.in);
-      arrOut.push(v.out);
-      labels.push(d.label);
+      const pemasukan = sumIn[d.key] || 0;
+      const pengeluaran = sumOut[d.key] || 0;
+      const close = open + pemasukan - pengeluaran;
+      const high = Math.max(open, close);
+      const low = Math.min(open, close);
+      candleArr.push({ time: d.bd, open, high, low, close });
+      closes.push(close);
+      open = close;
     }
-    return { arrIn, arrOut, labels };
+
+    // EMA periode proporsional dengan range (biar smooth)
+    const period = Math.max(3, Math.round(range / 2));
+    const emaVals = buildEMA(closes, period);
+    const emaLine = emaVals.map((v, i) => ({ time: days[i].bd, value: v }));
+
+    // BUY marker ketika close menembus EMA dari bawah ke atas
+    const buyMarkers: Array<{ time: any; position: 'belowBar' | 'aboveBar'; color: string; shape: any; text: string; size?: number }> = [];
+    for (let i = 1; i < closes.length; i++) {
+      if (closes[i - 1] <= emaVals[i - 1] && closes[i] > emaVals[i]) {
+        buyMarkers.push({
+          time: days[i].bd,
+          position: 'belowBar',
+          color: '#10b981',
+          shape: 'arrowUp', // bawaan library
+          text: '',
+          size: 2,
+        } as any);
+      }
+    }
+
+    return { candles: candleArr, emaLine, buyMarkers };
   }, [data, range]);
 
-  // Resize responsif
+  // Inisialisasi chart
   useEffect(() => {
-    if (!wrapRef.current) return;
-    setW(wrapRef.current.clientWidth || 600);
-    if (typeof ResizeObserver === 'undefined') return;
-    const ro = new ResizeObserver((entries) => {
-      for (const e of entries) setW(Math.floor(e.contentRect.width));
-    });
-    ro.observe(wrapRef.current);
-    return () => ro.disconnect();
-  }, []);
+    let disposed = false;
+    let lib: any;
+    let ro: ResizeObserver | null = null;
 
-  // Reset animasi jika data/range berubah
-  useEffect(() => { setProgress(0); }, [series, range]);
+    const init = async () => {
+      lib = await import('lightweight-charts');
+      if (!containerRef.current || disposed) return;
 
-  // Animasi smooth (requestAnimationFrame)
-  useEffect(() => {
-    let raf = 0;
-    let start: number | null = null;
-    const step = (ts: number) => {
-      if (start === null) start = ts;
-      const elapsed = ts - start;
-      const p = (elapsed % loopMs) / loopMs; // 0..1 loop
-      setProgress(p);
-      raf = requestAnimationFrame(step);
+      const width = Math.max(240, containerRef.current.getBoundingClientRect().width || 0);
+
+      const chart = lib.createChart(containerRef.current, {
+        width,
+        height,
+        layout: {
+          background: { color: 'transparent' },
+          textColor: '#cbd5e1',
+        },
+        grid: {
+          vertLines: { color: 'rgba(255,255,255,0.08)' },
+          horzLines: { color: 'rgba(255,255,255,0.08)' },
+        },
+        rightPriceScale: {
+          borderColor: 'rgba(255,255,255,0.12)',
+          scaleMargins: { top: 0.08, bottom: 0.08 },
+        },
+        timeScale: {
+          borderColor: 'rgba(255,255,255,0.12)',
+          rightOffset: 0,
+          barSpacing: Math.max(6, Math.floor(width / (range * 3))),
+          fixLeftEdge: true,
+          fixRightEdge: false,
+        },
+        crosshair: {
+          mode: 0,
+        },
+        localization: {
+          priceFormatter: (p: number) => {
+            const a = Math.abs(p);
+            const sign = p < 0 ? '-' : '';
+            const fmt = (v: number, s: string) => {
+              const num = v >= 10 ? Math.round(v).toString() : v.toFixed(1).replace(/\.0$/, '');
+              return `${sign}Rp ${num}${s}`;
+            };
+            if (a >= 1e12) return fmt(a / 1e12, 'T');
+            if (a >= 1e9) return fmt(a / 1e9, 'M');
+            if (a >= 1e6) return fmt(a / 1e6, 'jt');
+            if (a >= 1e3) return `${sign}Rp ${Math.round(a / 1e3)}rb`;
+            return `${sign}Rp ${a}`;
+          },
+        },
+      });
+
+      const candle = chart.addCandlestickSeries({
+        upColor: '#22c55e',
+        downColor: '#ef4444',
+        wickUpColor: '#22c55e',
+        wickDownColor: '#ef4444',
+        borderVisible: false,
+      });
+
+      const line = chart.addLineSeries({
+        color: '#2dd4bf', // hijau kebiruan
+        lineWidth: 2,
+        priceLineVisible: false,
+        // gunakan curved line jika tersedia (versi lib baru)
+        ...(lib.LineType ? { lineType: lib.LineType.Curved } : {}),
+      } as any);
+
+      candle.setData(candles);
+      line.setData(emaLine);
+      candle.setMarkers(buyMarkers as any);
+      chart.timeScale().fitContent();
+
+      chartRef.current = chart;
+      candleSeriesRef.current = candle;
+      lineSeriesRef.current = line;
+
+      // Responsif
+      ro = new ResizeObserver((entries) => {
+        if (!chartRef.current) return;
+        const w = Math.max(240, entries[0].contentRect.width);
+        chartRef.current.applyOptions({ width: w, height });
+      });
+      if (wrapRef.current) ro.observe(wrapRef.current);
     };
-    raf = requestAnimationFrame(step);
-    return () => cancelAnimationFrame(raf);
-  }, [loopMs]);
 
-  // Build path
-  const padX = 28;
-  const padY = 16;
-  const width = Math.max(280, w);
-  const innerW = width - padX * 2;
-  const heightPx = Math.max(160, height);
-  const innerH = heightPx - padY * 2;
+    init();
 
-  const n = Math.max(series.arrIn.length, series.arrOut.length);
-  const maxVal = Math.max(1, ...series.arrIn, ...series.arrOut);
-  const minVal = 0; // baseline nol
-  const span = Math.max(1, maxVal - minVal);
+    return () => {
+      disposed = true;
+      try { ro?.disconnect(); } catch {}
+      if (chartRef.current) {
+        try { chartRef.current.remove(); } catch {}
+        chartRef.current = null;
+        candleSeriesRef.current = null;
+        lineSeriesRef.current = null;
+      }
+    };
+  }, [height, range, candles, emaLine, buyMarkers]);
 
-  // Buat posisi titik (x,y) untuk kedua garis
-  const ptsIn = Array.from({ length: n }, (_, i) => {
-    const x = padX + (innerW * i) / Math.max(1, n - 1);
-    const y = padY + innerH - ((series.arrIn[i] - minVal) / span) * innerH;
-    return { x, y, label: series.labels[i], v: series.arrIn[i] };
-  });
-  const ptsOut = Array.from({ length: n }, (_, i) => {
-    const x = padX + (innerW * i) / Math.max(1, n - 1);
-    const y = padY + innerH - ((series.arrOut[i] - minVal) / span) * innerH;
-    return { x, y, label: series.labels[i], v: series.arrOut[i] };
-  });
-
-  // Progress -> posisi segmen (0..n-1)
-  const segTotal = Math.max(1, n - 1);
-  const pos = progress * segTotal;
-  const idx = Math.floor(pos);
-  const t = Math.min(1, Math.max(0, pos - idx)); // 0..1
-
-  // Interpolasi titik terakhir
-  const interp = (a: { x: number; y: number }, b: { x: number; y: number }, tt: number) => ({
-    x: a.x + (b.x - a.x) * tt,
-    y: a.y + (b.y - a.y) * tt,
-  });
-
-  function buildPartialPath(pts: { x: number; y: number }[]) {
-    if (pts.length === 0) return '';
-    if (pts.length === 1) return `M ${pts[0].x},${pts[0].y}`;
-    const upto = Math.min(idx + 1, pts.length - 1);
-    const head = interp(pts[upto], pts[upto + 1] ?? pts[upto], t);
-    const pathPts = pts.slice(0, upto + 1).concat(head);
-    return pathPts.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
-  }
-
-  const pathIn = buildPartialPath(ptsIn);
-  const pathOut = buildPartialPath(ptsOut);
-
-  const headIn = (() => {
-    if (ptsIn.length === 0) return null;
-    const upto = Math.min(idx + 1, ptsIn.length - 1);
-    return interp(ptsIn[upto], ptsIn[upto + 1] ?? ptsIn[upto], t);
-  })();
-
-  const headOut = (() => {
-    if (ptsOut.length === 0) return null;
-    const upto = Math.min(idx + 1, ptsOut.length - 1);
-    return interp(ptsOut[upto], ptsOut[upto + 1] ?? ptsOut[upto], t);
-  })();
-
-  // Label X jarangin sesuai lebar
-  const every = width >= 720 ? 1 : width >= 560 ? 2 : width >= 420 ? 3 : 4;
-
-  // Format Rp ringkas untuk title
-  const fmtRp = (n: number) => 'Rp ' + new Intl.NumberFormat('id-ID').format(Math.round(n || 0));
+  // Update data saat berubah
+  useEffect(() => {
+    if (!chartRef.current || !candleSeriesRef.current || !lineSeriesRef.current) return;
+    candleSeriesRef.current.setData(candles);
+    lineSeriesRef.current.setData(emaLine);
+    candleSeriesRef.current.setMarkers(buyMarkers as any);
+    chartRef.current.timeScale().fitContent();
+  }, [candles, emaLine, buyMarkers]);
 
   return (
-    <div ref={wrapRef} style={{ width: '100%' }}>
-      <svg viewBox={`0 0 ${width} ${heightPx}`} preserveAspectRatio="none" width="100%" height={heightPx}>
-        <defs>
-          <linearGradient id="lg-green" x1="0" y1="0" x2="1" y2="0">
-            <stop offset="0%" stopColor="#22c55e" />
-            <stop offset="100%" stopColor="#14b8a6" />
-          </linearGradient>
-          <linearGradient id="lg-red" x1="0" y1="0" x2="1" y2="0">
-            <stop offset="0%" stopColor="#ef4444" />
-            <stop offset="100%" stopColor="#f97316" />
-          </linearGradient>
-        </defs>
-
-        {/* Panel */}
-        <rect
-          x={padX}
-          y={padY}
-          width={innerW}
-          height={innerH}
-          rx="10"
-          fill="rgba(255,255,255,0.04)"
-          stroke="rgba(255,255,255,0.12)"
-        />
-
-        {/* Grid halus */}
-        <g opacity="0.12">
-          {[0.25, 0.5, 0.75].map((t) => (
-            <line
-              key={t}
-              x1={padX}
-              x2={padX + innerW}
-              y1={padY + innerH * t}
-              y2={padY + innerH * t}
-              stroke="rgba(255,255,255,0.20)"
-              strokeDasharray="2 6"
-            />
-          ))}
-        </g>
-
-        {/* Garis Pemasukan (hijau) */}
-        {pathIn && (
-          <path
-            d={pathIn}
-            fill="none"
-            stroke="url(#lg-green)"
-            strokeWidth="2.4"
-            strokeLinejoin="round"
-            strokeLinecap="round"
-          />
-        )}
-        {/* Garis Pengeluaran (merah) */}
-        {pathOut && (
-          <path
-            d={pathOut}
-            fill="none"
-            stroke="url(#lg-red)"
-            strokeWidth="2.4"
-            strokeLinejoin="round"
-            strokeLinecap="round"
-            opacity="0.95"
-          />
-        )}
-
-        {/* Head dots */}
-        {headIn && (
-          <circle cx={headIn.x} cy={headIn.y} r="3.5" fill="#22c55e" stroke="#052e16" strokeWidth="1.2">
-            <title>Pemasukan — {fmtRp(series.arrIn[Math.min(idx + 1, n - 1)])}</title>
-          </circle>
-        )}
-        {headOut && (
-          <circle cx={headOut.x} cy={headOut.y} r="3.5" fill="#ef4444" stroke="#450a0a" strokeWidth="1.2">
-            <title>Pengeluaran — {fmtRp(series.arrOut[Math.min(idx + 1, n - 1)])}</title>
-          </circle>
-        )}
-
-        {/* Label tanggal */}
-        <g fontSize="9" fill="rgba(203,213,225,0.9)">
-          {ptsIn.map((p, i) => {
-            if (i % every !== 0) return null;
-            return (
-              <text key={`lbl-${i}`} x={p.x} y={padY + innerH + 12} textAnchor="middle">
-                {series.labels[i]}
-              </text>
-            );
-          })}
-        </g>
-      </svg>
+    <div
+      ref={wrapRef}
+      style={{
+        width: '100%',
+        // Background ala gambar: grid halus + dunia samar (opsional: ganti URL peta)
+        background:
+          'radial-gradient(1000px 600px at 50% -20%, rgba(45,212,191,0.12), transparent 60%), linear-gradient(180deg, rgba(10,12,16,0.9), rgba(10,12,16,0.9))',
+        borderRadius: 12,
+      }}
+    >
+      <div
+        ref={containerRef}
+        style={{
+          width: '100%',
+          height,
+          // bisa tambahkan backgroundImage peta dunia custom di sini:
+          // backgroundImage: 'url(/world-map-lite.png)',
+          backgroundPosition: 'center',
+          backgroundRepeat: 'no-repeat',
+          backgroundSize: 'cover',
+        }}
+      />
     </div>
   );
 }
