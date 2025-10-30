@@ -1,11 +1,11 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth } from '@/lib/firebase';
 import { FullscreenSpinner } from '@/components/Spinner';
 
-export default function AuthInitGate({ children }: { children: React.ReactNode }) {
+export default function AuthInitGate({ children }: { children: ReactNode }) {
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
@@ -13,6 +13,6 @@ export default function AuthInitGate({ children }: { children: React.ReactNode }
     return () => unsub();
   }, []);
 
-  if (!ready) return <FullscreenSpinner />;
+  if (!ready) return <FullscreenSpinner label="Memuat..." />;
   return <>{children}</>;
 }
