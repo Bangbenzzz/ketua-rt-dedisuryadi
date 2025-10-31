@@ -1,7 +1,0 @@
-<?xml version='1.0' encoding='utf-8'?>
-<resources>
-    <string name="app_name">Admin RT Cikadu</string>
-    <string name="title_activity_main">Admin RT Cikadu</string>
-    <string name="package_name">io.github.benzzzz.rtcikadu</string>
-    <string name="custom_url_scheme">io.github.benzzzz.rtcikadu</string>
-</resources>
