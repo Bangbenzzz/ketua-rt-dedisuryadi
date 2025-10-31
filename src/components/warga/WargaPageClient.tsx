@@ -42,7 +42,7 @@ export default function WargaPageClient() {
   const [statusFilter, setStatusFilter] = useState<'All' | Status>('All');
   const [kategoriFilter, setKategoriFilter] = useState<'All' | KategoriUmur>('All');
   const [pageSize, setPageSize] = useState(10);
-  const debouncedQuery = useDebounce(query, 300);
+  const debouncedQuery = useDebounce(query, 400);
 
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<Warga | null>(null);
@@ -53,9 +53,8 @@ export default function WargaPageClient() {
   const [addMode, setAddMode] = useState<'family' | 'single'>('family');
   const [isMounted, setIsMounted] = useState(false);
   useEffect(() => { setIsMounted(true); }, []);
-
-  const [chartKk, setChartKk] = useState('');
-  const debouncedChartKk = useDebounce(chartKk, 400);
+  
+  const [selectedFamily, setSelectedFamily] = useState<Warga[] | null>(null);
 
   const showError = (message: string, title = 'Gagal') => setNotice({ type: 'error', title, message });
   const showSuccess = (message: string, title = 'Berhasil') => setNotice({ type: 'success', title, message });
@@ -80,16 +79,109 @@ export default function WargaPageClient() {
     return () => unsub();
   }, []);
 
-  const filtered = useMemo(() => { /* ... logic filter sama ... */ return data; }, [data, debouncedQuery, statusFilter, kategoriFilter]);
-  const { page, setPage, total, totalPages, pageItems } = usePagination(filtered, pageSize);
-  const familyChartData = useMemo(() => { /* ... logic chart sama ... */ return null; }, [data, debouncedChartKk]);
-  const statusSummary = useMemo(() => { /* ... logic summary sama ... */ return { Menikah: 0, Cerai: 0, Lajang: 0 }; }, [filtered]);
-  const kategoriSummary = useMemo(() => { /* ... logic summary sama ... */ return { Balita: 0, 'Anak-anak': 0, Remaja: 0, Dewasa: 0, Lansia: 0 }; }, [filtered]);
-
-  async function upsertWarga(input: WargaInput, editingId?: string) { /* ... logic upsert sama ... */ }
-  async function createKeluarga(input: KeluargaInput) { /* ... logic create sama ... */ }
-  async function removeWarga(warga: Warga) { /* ... logic remove sama ... */ }
+  const filtered = useMemo(() => {
+    const q = debouncedQuery.trim().toLowerCase();
+    if (/^\d{16}$/.test(q)) {
+      const family = data.filter(w => w.noKk === q);
+      if (family.length > 0) {
+        family.sort((a, b) => {
+            const peranOrder: Record<string, number> = { "Kepala Keluarga": 1, "Istri": 2, "Anak": 3 };
+            return (peranOrder[a.peran] || 4) - (peranOrder[b.peran] || 4);
+        });
+        setSelectedFamily(family);
+        return [];
+      }
+    }
+    setSelectedFamily(null);
+    return data.filter((w) => {
+      const qMatch = q === '' || w.nama.toLowerCase().includes(q) || w.nik.includes(q);
+      const stMatch = statusFilter === 'All' || w.status === statusFilter;
+      const age = getAge(w.tglLahir);
+      const kat = getKategoriUmur(age);
+      const katMatch = kategoriFilter === 'All' || kat === kategoriFilter;
+      return qMatch && stMatch && katMatch;
+    });
+  }, [data, debouncedQuery, statusFilter, kategoriFilter]);
   
+  const familyChartData = useMemo(() => {
+    if (!selectedFamily) return null;
+    const composition: { [key in Peran]?: number } = { 'Kepala Keluarga': 0, 'Istri': 0, 'Anak': 0 };
+    selectedFamily.forEach(member => {
+      if (composition.hasOwnProperty(member.peran)) {
+        composition[member.peran]!++;
+      }
+    });
+    return composition;
+  }, [selectedFamily]);
+
+  const { page, setPage, total, totalPages, pageItems } = usePagination(filtered, pageSize);
+
+  async function upsertWarga(input: WargaInput, editingId?: string) {
+    if (!input.nama.trim() || !input.pekerjaan.trim() || !input.tempatLahir.trim()) return showError('Nama, Pekerjaan, dan Tempat Lahir wajib diisi.');
+    if (!validateNik(input.nik) || !validateNoKk(input.noKk)) return showError('NIK dan No KK harus 16 digit angka.');
+    if (!validateDate(input.tglLahir)) return showError('Tanggal lahir tidak valid.');
+    const nikExists = data.some((x) => x.nik === input.nik && x.id !== editingId);
+    if (nikExists) return showError('NIK sudah terdaftar.');
+    
+    const payload: WargaInput = { ...input, rt: pad2(input.rt), rw: pad2(input.rw) };
+    try {
+      if (editingId) {
+        await setDoc(doc(db, 'warga', editingId), { ...payload, updatedAt: serverTimestamp() }, { merge: true });
+      } else {
+        await addDoc(collection(db, 'warga'), { ...payload, createdAt: serverTimestamp() });
+      }
+      setShowForm(false); setEditing(null);
+      showSuccess('Data warga berhasil disimpan.');
+    } catch (e: any) { showError('Gagal menyimpan: ' + (e?.message || e)); }
+  }
+
+  async function createKeluarga(input: KeluargaInput) {
+    const { noKk, alamat, rt, rw, kepala, istri, anak } = input;
+    if (!validateNoKk(noKk)) return showError('No. KK harus 16 digit.');
+    if (!kepala.nama || !kepala.nik || !kepala.tempatLahir || !kepala.pekerjaan) return showError('Data Kepala Keluarga tidak lengkap.');
+
+    const allMembers = [kepala, ...(istri && istri.nama ? [istri] : []), ...anak];
+    const allNiks = allMembers.map(m => m.nik).filter(Boolean);
+
+    if (new Set(allNiks).size !== allNiks.length) return showError('Ada NIK duplikat di dalam form.');
+    
+    const nikExists = data.some(w => allNiks.includes(w.nik));
+    if (nikExists) return showError('Satu atau lebih NIK sudah terdaftar.');
+
+    try {
+      const batch: Promise<any>[] = [];
+
+      const payloadKepala: WargaInput = { ...kepala, noKk, alamat, rt, rw, peran: 'Kepala Keluarga', status: 'Menikah' };
+      batch.push(addDoc(collection(db, 'warga'), { ...payloadKepala, createdAt: serverTimestamp() }));
+      
+      if (istri && istri.nama) {
+        const payloadIstri: WargaInput = { ...istri, noKk, alamat, rt, rw, peran: 'Istri', status: 'Menikah' };
+        batch.push(addDoc(collection(db, 'warga'), { ...payloadIstri, createdAt: serverTimestamp() }));
+      }
+
+      anak.forEach(a => {
+        if (a.nama) {
+          const payloadAnak: WargaInput = { ...a, noKk, alamat, rt, rw, peran: 'Anak', status: 'Lajang' };
+          batch.push(addDoc(collection(db, 'warga'), { ...payloadAnak, createdAt: serverTimestamp() }));
+        }
+      });
+
+      await Promise.all(batch);
+      setShowForm(false);
+      showSuccess('Keluarga baru berhasil ditambahkan.');
+    } catch (e: any) {
+      showError('Gagal menyimpan keluarga: ' + (e?.message || e));
+    }
+  }
+
+  async function removeWarga(warga: Warga) {
+    try {
+      await deleteDoc(doc(db, 'warga', warga.id));
+      setConfirmDelete(null);
+      showSuccess('Data warga berhasil dihapus.');
+    } catch (e: any) { showError('Gagal menghapus: ' + (e?.message || e)); }
+  }
+
   if (!loaded) return <div className="pageLoader"><Spinner label="Memuat data..." /></div>;
   if (!authed) return <PasswordGate onSuccess={handleAuthSuccess} />;
 
@@ -103,132 +195,121 @@ export default function WargaPageClient() {
         </div>
       </header>
 
-      {/* --- BAGIAN YANG HILANG DIKEMBALIKAN --- */}
       <section className="toolbar">
         <div className="left">
-          <div className="search"><input placeholder="Cari nama / NIK / No KK..." value={query} onChange={(e) => { setPage(1); setQuery(e.target.value); }} /></div>
+          <div className="search"><input placeholder="Cari Nama / NIK / No. KK" value={query} onChange={(e) => setQuery(e.target.value)} /></div>
           <div className="filter">
             <label>Status</label>
-            <select value={statusFilter} onChange={(e) => { setPage(1); setStatusFilter(e.target.value as any); }}>
-              <option value="All">Semua</option><option value="Menikah">Menikah</option><option value="Cerai">Cerai</option><option value="Lajang">Lajang</option>
-            </select>
+            <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as any)}><option value="All">Semua</option><option value="Menikah">Menikah</option><option value="Cerai">Cerai</option><option value="Lajang">Lajang</option></select>
           </div>
           <div className="filter">
             <label>Usia</label>
-            <select value={kategoriFilter} onChange={(e) => { setPage(1); setKategoriFilter(e.target.value as any); }}>
-              <option value="All">Semua</option><option value="Balita">Balita</option><option value="Anak-anak">Anak</option><option value="Remaja">Remaja</option><option value="Dewasa">Dewasa</option><option value="Lansia">Lansia</option>
-            </select>
+            <select value={kategoriFilter} onChange={(e) => setKategoriFilter(e.target.value as any)}><option value="All">Semua</option><option value="Balita">Balita</option><option value="Anak-anak">Anak</option><option value="Remaja">Remaja</option><option value="Dewasa">Dewasa</option><option value="Lansia">Lansia</option></select>
           </div>
         </div>
         <div className="right">
           <label>Tampil</label>
-          <select value={pageSize} onChange={(e) => { setPage(1); setPageSize(Number(e.target.value)); }}>
-            <option value={10}>10</option><option value={20}>20</option><option value={50}>50</option>
-          </select>
+          <select value={pageSize} onChange={(e) => setPageSize(Number(e.target.value))}><option value={10}>10</option><option value={20}>20</option><option value={50}>50</option></select>
         </div>
       </section>
 
-      <section className="summaryAge">
-        <StatusBar label="Balita" value={kategoriSummary['Balita']} total={filtered.length} color="#06b6d4" />
-        <StatusBar label="Anak" value={kategoriSummary['Anak-anak']} total={filtered.length} color="#10b981" />
-        <StatusBar label="Remaja" value={kategoriSummary['Remaja']} total={filtered.length} color="#8b5cf6" />
-        <StatusBar label="Dewasa" value={kategoriSummary['Dewasa']} total={filtered.length} color="#f97316" />
-        <StatusBar label="Lansia" value={kategoriSummary['Lansia']} total={filtered.length} color="#ef4444" />
-      </section>
-      {/* ------------------------------------- */}
-
-      <div className="card">
-        <div className="cardHeader">
-          Menampilkan {pageItems.length} dari {total} total warga
-        </div>
-        <div className="tableWrap">
-          <table className="tbl">
-            <thead>
-              <tr>
-                <th>No</th><th>Nama Lengkap</th><th>NIK</th><th>Jenis Kelamin</th><th>Tempat, Tgl Lahir</th><th>Agama</th><th>Pendidikan</th><th>Pekerjaan</th><th className="actionsCol">Aksi</th>
-              </tr>
-            </thead>
-            <tbody>
-              {pageItems.map((w, index) => (
-                <tr key={w.id}>
-                  <td data-label="No">{(page - 1) * pageSize + index + 1}</td>
-                  <td data-label="Nama"><button className="link" onClick={() => setShowDetail(w)}>{w.nama}</button></td>
-                  <td data-label="NIK"><code>{w.nik}</code></td>
-                  <td data-label="Jenis Kelamin">{w.jenisKelamin}</td>
-                  <td data-label="Lahir">{w.tempatLahir}, {new Date(w.tglLahir).toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' })}</td>
-                  <td data-label="Agama">{w.agama}</td>
-                  <td data-label="Pendidikan">{w.pendidikan}</td>
-                  <td data-label="Pekerjaan">{w.pekerjaan}</td>
-                  <td data-label="Aksi" className="actionsCol">
-                    <div className="rowActions">
-                      <button className="btn sm" onClick={() => setShowDetail(w)}><EyeIcon /></button>
-                      <button className="btn sm" onClick={() => { setEditing(w); setShowForm(true); }}><EditIcon /></button>
-                      <button className="btn sm danger" onClick={() => setConfirmDelete(w)}><TrashIcon /></button>
+      {selectedFamily ? (
+        <div className="card">
+          <div className="cardHeader">Detail Keluarga - No. KK: <code>{selectedFamily[0].noKk}</code></div>
+          <div className="family-detail-grid">
+            <div className="family-chart">
+              <h4>Komposisi Keluarga</h4>
+              {familyChartData && (
+                <div className="chart-bars">
+                  {Object.entries(familyChartData).map(([peran, jumlah]) => (
+                    <div className="bar-item" key={peran}>
+                      <div className="bar-label">{peran}</div>
+                      <div className="bar-wrapper">
+                        <div className={`bar-fill ${peran.toLowerCase().replace(/ /g, '-')}`} style={{ width: `${Math.max(5, (jumlah || 0) * 25)}%` }}>
+                          <span>{jumlah}</span>
+                        </div>
+                      </div>
                     </div>
-                  </td>
-                </tr>
-              ))}
-              {pageItems.length === 0 && (
-                <tr><td colSpan={9} className="empty">Tidak ada data warga.</td></tr>
+                  ))}
+                </div>
               )}
-            </tbody>
-          </table>
+            </div>
+            <div className="family-members">
+              <h4>Anggota Keluarga ({selectedFamily.length} orang)</h4>
+              <ul>
+                {selectedFamily.map(member => (
+                  <li key={member.id}>
+                    <div className="member-info"><span className="member-name">{member.nama}</span><span className="member-role">{member.peran}</span></div>
+                    <code className="member-nik">NIK: {member.nik}</code>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
         </div>
-        <Pagination page={page} totalPages={totalPages} total={total} onPage={setPage} />
-      </div>
-      
-      <section className="card">
-        <div className="cardHeader">Chart Komposisi Keluarga</div>
-        <div className="chart-controls">
-          <label htmlFor="kk-chart-input">Tampilkan Chart (masukkan No. KK)</label>
-          <input id="kk-chart-input" type="text" placeholder="Ketik 16 digit No. KK..." value={chartKk} onChange={(e) => setChartKk(e.target.value)} maxLength={16} />
+      ) : (
+        <div className="card">
+          <div className="cardHeader">Menampilkan {pageItems.length} dari {total} total warga</div>
+          <div className="tableWrap">
+            <table className="tbl">
+              <thead>
+                <tr><th>No</th><th>Nama Lengkap</th><th>NIK</th><th>Jenis Kelamin</th><th>Tempat, Tgl Lahir</th><th>Agama</th><th>Pendidikan</th><th>Pekerjaan</th><th className="actionsCol">Aksi</th></tr>
+              </thead>
+              <tbody>
+                {pageItems.map((w, index) => (
+                  <tr key={w.id}>
+                    <td data-label="No">{(page - 1) * pageSize + index + 1}</td>
+                    <td data-label="Nama"><button className="link" onClick={() => setShowDetail(w)}>{w.nama}</button></td>
+                    <td data-label="NIK"><code>{w.nik}</code></td>
+                    <td data-label="Jenis Kelamin">{w.jenisKelamin}</td>
+                    <td data-label="Lahir">{w.tempatLahir}, {new Date(w.tglLahir).toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' })}</td>
+                    <td data-label="Agama">{w.agama}</td>
+                    <td data-label="Pendidikan">{w.pendidikan}</td>
+                    <td data-label="Pekerjaan">{w.pekerjaan}</td>
+                    <td data-label="Aksi" className="actionsCol">
+                      <div className="rowActions">
+                        <button className="btn sm" onClick={() => setShowDetail(w)}><EyeIcon /></button>
+                        <button className="btn sm" onClick={() => { setEditing(w); setShowForm(true); }}><EditIcon /></button>
+                        <button className="btn sm danger" onClick={() => setConfirmDelete(w)}><TrashIcon /></button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+                {pageItems.length === 0 && (<tr><td colSpan={9} className="empty">Tidak ada data warga.</td></tr>)}
+              </tbody>
+            </table>
+          </div>
+          <Pagination page={page} totalPages={totalPages} total={total} onPage={setPage} />
         </div>
-        <div className="chart-container">
-          {familyChartData && !('error' in familyChartData) && ( /* ... JSX Chart ... */ )}
-          {familyChartData && 'error' in familyChartData && <p className="empty-chart">{familyChartData.error}</p>}
-          {!familyChartData && <p className="empty-chart">Ketik No. KK untuk melihat chart.</p>}
-        </div>
-      </section>
+      )}
 
-      {/* MODAL HANDLING */}
       {showForm && (addMode === 'family' ? 
         <KeluargaFormModal onClose={() => setShowForm(false)} onSubmit={(payload) => createKeluarga(payload)} />
         :
         <WargaFormModal initial={editing ?? undefined} onClose={() => { setShowForm(false); setEditing(null); }} onSubmit={(payload) => upsertWarga(payload, editing?.id)} onQuickAddChild={() => {}} />
       )}
-      {showAddChoiceModal && <AddChoiceModal 
-        onClose={() => setShowAddChoiceModal(false)} 
-        onSelectSingle={() => { setAddMode('single'); setEditing(null); setShowForm(true); setShowAddChoiceModal(false); }} 
-        onSelectFamily={() => { setAddMode('family'); setEditing(null); setShowForm(true); setShowAddChoiceModal(false); }}
-      />}
+      {showAddChoiceModal && <AddChoiceModal onClose={() => setShowAddChoiceModal(false)} onSelectSingle={() => { setAddMode('single'); setEditing(null); setShowForm(true); setShowAddChoiceModal(false); }} onSelectFamily={() => { setAddMode('family'); setEditing(null); setShowForm(true); setShowAddChoiceModal(false); }} />}
       {showDetail && <DetailModal warga={showDetail} onClose={() => setShowDetail(null)} onEdit={() => { setEditing(showDetail); setShowForm(true); setShowDetail(null); }} />}
       {confirmDelete && <ConfirmModal title="Hapus Warga" message={`Yakin ingin menghapus data ${confirmDelete.nama}?`} onCancel={() => setConfirmDelete(null)} onConfirm={() => removeWarga(confirmDelete)} />}
       {isMounted && notice && createPortal(<NoticeModal notice={notice} onClose={() => setNotice(null)} />, document.body)}
 
       <style jsx>{`
-        /* --- CSS LENGKAP DAN RESPONSIVE --- */
         .wrap { max-width: 1240px; margin: 0 auto; padding: 24px; display: grid; gap: 24px; }
         .head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; }
-        .title h2 { margin: 0; font-size: 1.5rem; color: #e5e7eb; }
-        .title .sub { margin: 4px 0 0; color: #9ca3af; font-size: 0.9rem; }
+        .title h2 { margin: 0; font-size: 1.5rem; color: #e5e7eb; } .title .sub { margin: 4px 0 0; color: #9ca3af; }
         .headActions { display: flex; gap: 10px; }
         .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 9px 16px; border-radius: 8px; font-weight: 600; border: none; cursor: pointer; text-decoration: none; transition: all 0.2s; }
-        .btn.dashboard { background-color: #3b82f6; color: white; }
-        .btn.primary { background-color: #22c55e; color: white; }
-        
+        .btn.dashboard { background-color: #3b82f6; color: white; } .btn.primary { background-color: #22c55e; color: white; }
         .toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px; padding: 12px; border-radius: 12px; background: rgba(255,255,255, 0.03); border: 1px solid rgba(255,255,255, 0.1); }
         .toolbar .left, .toolbar .right { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
         .search, .filter { display: flex; align-items: center; gap: 8px; flex-grow: 1; }
         .search input, .filter select { background: rgba(255,255,255, 0.05); border: 1px solid rgba(255,255,255, 0.15); border-radius: 8px; padding: 8px 12px; color: #e5e7eb; width: 100%; }
         .filter label { color: #9ca3af; font-size: 0.875rem; white-space: nowrap; }
-        
-        .summary, .summaryAge { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
-        
         .card { border: 1px solid rgba(255,255,255,.12); border-radius: 14px; background: rgba(255,255,255, 0.03); overflow: hidden; }
         .cardHeader { padding: 12px 16px; border-bottom: 1px solid rgba(255,255,255,.12); font-size: 0.9rem; color: #9ca3af; }
         .tableWrap { overflow-x: auto; }
         table.tbl { width: 100%; border-collapse: collapse; }
-        .tbl th, .tbl td { padding: 14px 16px; border-bottom: 1px solid rgba(255,255,255, 0.08); text-align: left; vertical-align: middle; white-space: nowrap; font-size: 0.875rem; }
+        .tbl th, .tbl td { padding: 14px 16px; border-bottom: 1px solid rgba(255,255,255, 0.08); text-align: left; white-space: nowrap; font-size: 0.875rem; }
         .tbl tr:last-child td { border-bottom: none; }
         .tbl th { color: #a7f3d0; text-transform: uppercase; font-size: 0.75rem; position: sticky; top: 0; background: #111827; }
         .actionsCol { width: 150px; }
@@ -237,25 +318,32 @@ export default function WargaPageClient() {
         .btn.sm.danger { background: rgba(239, 68, 68, 0.15); border-color: rgba(239, 68, 68, 0.3); color: #fca5a5; }
         .empty { text-align: center; padding: 32px; color: #9ca3af; }
         .link { background: none; border: none; color: #93c5fd; cursor: pointer; padding: 0; font-weight: 500; }
-        
-        .chart-controls { padding: 16px; display: grid; gap: 8px; }
-        .chart-controls input { background: rgba(255,255,255, 0.05); border: 1px solid rgba(255,255,255, 0.15); border-radius: 8px; padding: 10px 12px; color: #e5e7eb; width: 100%; max-width: 400px; }
-        
+        .family-detail-grid { display: grid; grid-template-columns: 1fr 1.5fr; gap: 24px; padding: 16px; }
+        .family-chart h4, .family-members h4 { margin: 0 0 16px 0; color: #e5e7eb; font-size: 1.1rem; }
+        .chart-bars { display: grid; gap: 12px; }
+        .bar-item { display: grid; grid-template-columns: 120px 1fr; align-items: center; gap: 12px; }
+        .bar-label { font-size: 0.9rem; color: #cbd5e1; }
+        .bar-wrapper { width: 100%; background: rgba(255,255,255,0.05); border-radius: 4px; overflow: hidden; }
+        .bar-fill { height: 28px; display: flex; align-items: center; justify-content: flex-end; padding-right: 10px; color: white; font-weight: 600; border-radius: 4px; transition: width 0.5s ease-out; }
+        .bar-fill span { font-size: 0.8rem; }
+        .bar-fill.kepala-keluarga { background-color: #22c55e; } .bar-fill.istri { background-color: #ec4899; } .bar-fill.anak { background-color: #3b82f6; }
+        .family-members ul { list-style: none; padding: 0; margin: 0; display: grid; gap: 12px; }
+        .family-members li { background: rgba(255,255,255,0.05); padding: 12px; border-radius: 8px; border-left: 3px solid #3b82f6; }
+        .member-info { display: flex; justify-content: space-between; align-items: center; }
+        .member-name { font-weight: 600; } .member-role { font-size: 0.8rem; background: rgba(255,255,255,0.1); padding: 4px 8px; border-radius: 99px; }
+        .member-nik { display: block; margin-top: 8px; font-size: 0.8rem; color: #9ca3af; }
         @media (max-width: 900px) {
-          .tableWrap { overflow: visible; }
-          .tbl, .tbl tbody, .tbl tr { display: block; width: 100%; }
-          .tbl thead { display: none; }
+          .tableWrap { overflow: visible; } .tbl, .tbl tbody, .tbl tr { display: block; width: 100%; } .tbl thead { display: none; }
           .tbl tr { border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 12px; margin-bottom: 1rem; padding: 1rem; }
           .tbl td { display: grid; grid-template-columns: 110px 1fr; gap: 1rem; padding: 0.75rem 0; border-bottom: 1px solid rgba(255, 255, 255, 0.05); text-align: left; white-space: normal; }
           .tbl tr td:last-child { border-bottom: none; }
           .tbl td::before { content: attr(data-label); font-weight: 600; color: #9ca3af; }
-          .tbl td.actionsCol { grid-template-columns: 1fr; }
-          .tbl td.actionsCol::before { display: none; }
+          .tbl td.actionsCol { grid-template-columns: 1fr; } .tbl td.actionsCol::before { display: none; }
           .rowActions { justify-content: flex-start; }
+          .family-detail-grid { grid-template-columns: 1fr; }
         }
         @media (max-width: 768px) {
-          .wrap { padding: 16px; }
-          .head { flex-direction: column; align-items: stretch; text-align: center; }
+          .wrap { padding: 16px; } .head { flex-direction: column; align-items: stretch; text-align: center; }
         }
       `}</style>
     </div>
